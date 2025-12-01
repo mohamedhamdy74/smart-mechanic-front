@@ -5,14 +5,14 @@ import heroImage from "@/assets/hero-mechanic.jpg";
 
 export const Hero = () => {
   return (
-    <section className="relative min-h-[90vh] flex items-center overflow-hidden">
+    <section className="relative min-h-[90vh] flex items-center overflow-hidden bg-gradient-to-br from-primary/5 via-background to-orange-500/5 dark:bg-black dark:from-black dark:via-gray-900/10 dark:to-gray-800/10 transition-colors duration-500">
       {/* Background gradient */}
-      <div className="absolute inset-0 bg-gradient-hero" />
-      
-      <div className="container mx-auto px-4 relative z-10">
+      <div className="absolute inset-0 bg-gradient-hero opacity-30" />
+
+      <div className="container mx-auto px-6 relative z-10">
         <div className="grid md:grid-cols-2 gap-12 items-center">
           {/* Content */}
-          <div className="order-2 md:order-1 text-right animate-slide-up">
+          <div className="order-2 md:order-1 text-right animate-slide-in-right">
             <div className="inline-block mb-4 px-4 py-2 bg-primary/10 rounded-full">
               <span className="text-primary font-semibold text-sm">خدمة السيارات</span>
             </div>
@@ -70,13 +70,14 @@ export const Hero = () => {
           </div>
 
           {/* Image */}
-          <div className="order-1 md:order-2 animate-fade-in">
+          <div className="order-1 md:order-2 animate-zoom-in">
             <div className="relative">
-              <div className="absolute -inset-4 bg-gradient-primary rounded-3xl opacity-20 blur-2xl" />
+              <div className="absolute -inset-6 bg-gradient-to-r from-primary/10 via-orange-500/8 to-red-500/10 rounded-3xl blur-3xl animate-float" />
               <img
                 src={heroImage}
                 alt="Smart Mechanic"
-                className="relative rounded-3xl shadow-2xl w-full h-auto object-cover"
+                className="relative rounded-3xl w-full h-auto object-cover hover-lift transition-all duration-500 animate-soft-pulse"
+                style={{ animationDelay: '0.5s' }}
               />
             </div>
           </div>

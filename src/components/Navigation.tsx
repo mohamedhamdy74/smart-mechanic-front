@@ -3,9 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserProfileButton } from "./UserProfileButton";
-import { Menu, X, ShoppingCart } from "lucide-react";
+import { Menu, X, ShoppingCart, Bell, Navigation as NavigationIcon } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/SimpleAuthContext";
 import logoIcon from "@/assets/logo-icon.png";
 
 export const Navigation = () => {
@@ -13,6 +13,12 @@ export const Navigation = () => {
   const { user } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [cartItemCount, setCartItemCount] = useState(0);
+  const [notificationCount, setNotificationCount] = useState(0);
+
+  // Hide navigation on auth pages
+  if (location.pathname === '/auth') {
+    return null;
+  }
 
   // Update cart count from localStorage
   useEffect(() => {
@@ -41,13 +47,100 @@ export const Navigation = () => {
     };
   }, []);
 
-  const navLinks = [
-    { href: "/", label: "الرئيسية" },
-    { href: "/services", label: "خدماتنا" },
-    { href: "/store", label: "المتجر" },
-    { href: "/mechanics", label: "الميكانيكيين" },
-    { href: "/ai-diagnosis", label: "التشخيص الذكي" },
-  ];
+  // Update notification count
+  useEffect(() => {
+    const updateNotificationCount = async () => {
+      if (!user) {
+        setNotificationCount(0);
+        return;
+      }
+
+      try {
+        const response = await fetch('http://localhost:5000/notifications', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('accessToken') || localStorage.getItem('token')}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const unreadCount = data.notifications.filter((n: any) => !n.read).length;
+          setNotificationCount(unreadCount);
+        } else {
+          setNotificationCount(0);
+        }
+      } catch (error) {
+        console.error('Error fetching notifications:', error);
+        setNotificationCount(0);
+      }
+    };
+
+    updateNotificationCount();
+
+    // Listen for new notifications
+    const handleNewNotification = (event: CustomEvent) => {
+      console.log('New notification received:', event.detail);
+      updateNotificationCount();
+    };
+
+    window.addEventListener('newNotification', handleNewNotification as EventListener);
+
+    // Update notification count periodically for real-time updates
+    const interval = setInterval(updateNotificationCount, 30000); // Update every 30 seconds
+
+    return () => {
+      window.removeEventListener('newNotification', handleNewNotification as EventListener);
+      clearInterval(interval);
+    };
+  }, [user]);
+
+  // Filter navigation links based on user role
+  const getNavLinks = () => {
+    const baseLinks = [
+      { href: "/", label: "الرئيسية" },
+      { href: "/services", label: "خدماتنا" },
+      { href: "/store", label: "المتجر" },
+    ];
+
+    if (!user) {
+      // For non-authenticated users, show all links
+      return [
+        ...baseLinks,
+        { href: "/mechanics", label: "الميكانيكيين" },
+        { href: "/ai-diagnosis", label: "التشخيص الذكي" },
+      ];
+    }
+
+    // For authenticated users, filter based on role
+    switch (user.role) {
+      case 'client':
+        return [
+          ...baseLinks,
+          { href: "/mechanics", label: "الميكانيكيين" },
+          { href: "/mechanic-tracker", label: "تتبع الميكانيكي" },
+          { href: "/ai-diagnosis", label: "التشخيص الذكي" },
+        ];
+      case 'mechanic':
+        return [
+          ...baseLinks,
+          // No services page for mechanics
+        ];
+      case 'workshop':
+        return [
+          ...baseLinks,
+          { href: "/order-management", label: "إدارة الطلبات" },
+          { href: "/reports", label: "التقارير" },
+          { href: "/ai-diagnosis", label: "التشخيص الذكي" },
+        ];
+      case 'admin':
+        return baseLinks; // Admin only sees basic links
+      default:
+        return baseLinks;
+    }
+  };
+
+  const navLinks = getNavLinks();
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -65,25 +158,30 @@ export const Navigation = () => {
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
 
-          {/* Cart and Auth buttons */}
+          {/* Cart, Notifications and Auth buttons */}
           <div className="flex items-center gap-2">
-            <Button
-              asChild
-              variant="ghost"
-              className="rounded-full hover:bg-primary/10 relative"
-            >
-              <Link to="/cart">
-                <ShoppingCart className="h-5 w-5" />
-                {cartItemCount > 0 && (
-                  <Badge
-                    variant="destructive"
-                    className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs"
-                  >
-                    {cartItemCount}
-                  </Badge>
-                )}
-              </Link>
-            </Button>
+            {user && (
+              <>
+                {/* Removed notification badge from navigation */}
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="rounded-full hover:bg-primary/10 relative"
+                >
+                  <Link to="/cart">
+                    <ShoppingCart className="h-5 w-5" />
+                    {cartItemCount > 0 && (
+                      <Badge
+                        variant="destructive"
+                        className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs"
+                      >
+                        {cartItemCount}
+                      </Badge>
+                    )}
+                  </Link>
+                </Button>
+              </>
+            )}
             {user ? (
               <UserProfileButton />
             ) : (

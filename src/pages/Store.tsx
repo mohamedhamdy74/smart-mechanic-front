@@ -4,80 +4,67 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ShoppingCart, Filter, Plus, LogIn } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/SimpleAuthContext";
+import { useQuery } from "@tanstack/react-query";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import engineOilImg from "@/assets/products/engine-oil.jpg";
 import airFilterImg from "@/assets/products/air-filter.jpg";
 import batteryImg from "@/assets/products/battery.jpg";
 import tireImg from "@/assets/products/tire.jpg";
 
-const products = [
+const staticProducts = [
   {
-    name: "زيت محرك أصلي 5W-30",
+    id: '1',
+    name: 'زيت محرك تويوتا أصلي',
     price: 150,
-    category: "زيوت",
-    carType: "سيدان",
-    description: "زيت محرك أصلي عالي الجودة مناسب لجميع أنواع السيارات الحديثة. يوفر حماية ممتازة للمحرك ويحسن الأداء.",
-    image: engineOilImg
+    category: 'زيوت',
+    carType: 'تويوتا',
+    description: 'زيت محرك أصلي لسيارات تويوتا، مضمون الجودة',
+    image: engineOilImg,
+    stock: 50,
+    inStock: true,
+    brand: 'تويوتا'
   },
   {
-    name: "بطارية سيارة 70 أمبير",
-    price: 450,
-    category: "بطاريات",
-    carType: "SUV",
-    description: "بطارية قوية بقوة 70 أمبير مثالية للسيارات الكبيرة والـ SUV. تدوم لفترة طويلة وتوفر بدء سريع.",
-    image: batteryImg
-  },
-  {
-    name: "فلتر هواء احترافي",
+    id: '2',
+    name: 'فلتر هواء أصلي',
     price: 80,
-    category: "فلاتر",
-    carType: "سيدان",
-    description: "فلتر هواء عالي الكفاءة يمنع دخول الغبار والشوائب إلى المحرك، مما يحسن الأداء ويوفر الوقود.",
-    image: airFilterImg
+    category: 'فلاتر',
+    carType: 'عام',
+    description: 'فلتر هواء عالي الكفاءة لجميع أنواع السيارات',
+    image: airFilterImg,
+    stock: 30,
+    inStock: true,
+    brand: 'مرسيدس'
   },
   {
-    name: "إطار 195/65 R15",
-    price: 600,
-    category: "إطارات",
-    carType: "سيدان",
-    description: "إطار عالي الجودة مناسب للسيارات السيدان. يوفر قبضة ممتازة على الطرق المختلفة ويقلل من الضوضاء.",
-    image: tireImg
+    id: '3',
+    name: 'بطارية سيارة 12 فولت',
+    price: 450,
+    category: 'بطاريات',
+    carType: 'عام',
+    description: 'بطارية سيارة قوية وعالية السعة',
+    image: batteryImg,
+    stock: 15,
+    inStock: true,
+    brand: 'فارتا'
   },
   {
-    name: "زيت محرك صناعي",
-    price: 180,
-    category: "زيوت",
-    carType: "شاحنة",
-    description: "زيت محرك صناعي قوي مناسب للشاحنات والمركبات التجارية. يتحمل الظروف القاسية والحمل الثقيل.",
-    image: engineOilImg
-  },
-  {
-    name: "فلتر زيت أصلي",
-    price: 75,
-    category: "فلاتر",
-    carType: "SUV",
-    description: "فلتر زيت أصلي يضمن تنقية مثالية للزيت ويحمي المحرك من التآكل والترسبات.",
-    image: airFilterImg
-  },
-  {
-    name: "بطارية 80 أمبير",
-    price: 500,
-    category: "بطاريات",
-    carType: "شاحنة",
-    description: "بطارية قوية 80 أمبير مثالية للشاحنات والمركبات التجارية الكبيرة. تدعم الأحمال الكهربائية العالية.",
-    image: batteryImg
-  },
-  {
-    name: "إطار 205/55 R16",
-    price: 650,
-    category: "إطارات",
-    carType: "SUV",
-    description: "إطار واسع مناسب للسيارات الرياضية متعددة الاستخدامات. يوفر أداء ممتاز في الظروف المختلفة.",
-    image: tireImg
-  },
+    id: '4',
+    name: 'إطار سيارة 205/55R16',
+    price: 350,
+    category: 'إطارات',
+    carType: 'عام',
+    description: 'إطار سيارة عالي الجودة مقاوم للانزلاق',
+    image: tireImg,
+    stock: 20,
+    inStock: true,
+    brand: 'ميشلان'
+  }
 ];
 
 const Store = () => {
@@ -87,46 +74,69 @@ const Store = () => {
   const [carTypeFilter, setCarTypeFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [cartItems, setCartItems] = useState([]);
-  const [allProducts, setAllProducts] = useState(products);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const productsPerPage = 12; // Show 12 products per page (3 rows of 4)
 
-  // Load cart and workshop products from localStorage
+  // Load cart from localStorage
   useEffect(() => {
     const savedCart = localStorage.getItem('cart');
     if (savedCart) {
       setCartItems(JSON.parse(savedCart));
     }
-
-    // Load workshop products
-    const loadWorkshopProducts = () => {
-      const workshopProducts = JSON.parse(localStorage.getItem('workshopProducts') || '[]');
-      const formattedWorkshopProducts = workshopProducts.map((product: any) => ({
-        name: product.name,
-        price: parseInt(product.price),
-        category: product.category,
-        carType: product.carType || "سيدان",
-        description: product.description || "منتج من مركز صيانة معتمد",
-        image: product.image
-      }));
-      setAllProducts(prev => {
-        // Remove existing workshop products first, then add updated ones
-        const existingProducts = prev.filter(p => !workshopProducts.some((wp: any) => wp.name === p.name));
-        return [...existingProducts, ...formattedWorkshopProducts];
-      });
-    };
-
-    loadWorkshopProducts();
-
-    // Listen for workshop product updates
-    const handleWorkshopProductsUpdate = () => {
-      loadWorkshopProducts();
-    };
-
-    window.addEventListener('workshopProductsUpdated', handleWorkshopProductsUpdate);
-
-    return () => {
-      window.removeEventListener('workshopProductsUpdated', handleWorkshopProductsUpdate);
-    };
   }, []);
+
+  // Fetch products using React Query for better caching and performance
+  const { data: productsResponse, isLoading, error: queryError } = useQuery({
+    queryKey: ['products', currentPage, productsPerPage],
+    queryFn: async () => {
+      // GET products doesn't require authentication
+      const response = await fetch(`http://localhost:5000/products?page=${currentPage}&limit=${productsPerPage}`, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('فشل في تحميل المنتجات');
+      }
+
+      const data = await response.json();
+      const formattedProducts = data.products.map((product: any) => ({
+        id: product._id,
+        name: product.name,
+        price: product.price,
+        category: product.category || 'غير مصنف',
+        carType: 'عام', // Default car type
+        description: product.description || 'منتج من مركز صيانة معتمد',
+        image: product.images && product.images.length > 0
+          ? `http://localhost:5000/${product.images[0]}`
+          : engineOilImg, // Fallback image
+        stock: product.stock,
+        inStock: product.inStock,
+        brand: product.brand,
+        workshopName: product.userId?.workshopName || product.userId?.name || 'مركز صيانة'
+      }));
+
+      return {
+        products: formattedProducts,
+        total: data.total || 0,
+        pages: data.pages || 1,
+        page: data.page || 1
+      };
+    },
+    staleTime: 30000, // Consider data fresh for 30 seconds
+  });
+
+  // Update local state when data changes
+  const allProducts = productsResponse?.products || [];
+  const loading = isLoading;
+
+  useEffect(() => {
+    if (productsResponse) {
+      setTotalPages(productsResponse.pages);
+    }
+  }, [productsResponse]);
 
   const addToCart = (product: any) => {
     // Check if user is logged in and is a client
@@ -141,12 +151,23 @@ const Store = () => {
       return;
     }
 
-    const existingItem = cartItems.find((item: any) => item.id === product.name);
+    // Check stock availability
+    if (!product.inStock || product.stock <= 0) {
+      toast.error('هذا المنتج غير متوفر حالياً');
+      return;
+    }
+
+    const existingItem = cartItems.find((item: any) => item.id === product.id);
 
     if (existingItem) {
+      // Check if adding more would exceed stock
+      if (existingItem.quantity >= product.stock) {
+        toast.error('لا يمكن إضافة المزيد من هذا المنتج - الكمية محدودة');
+        return;
+      }
       // Update quantity if item already exists
       const updatedCart = cartItems.map((item: any) =>
-        item.id === product.name
+        item.id === product.id
           ? { ...item, quantity: item.quantity + 1 }
           : item
       );
@@ -155,13 +176,14 @@ const Store = () => {
     } else {
       // Add new item to cart
       const cartItem = {
-        id: product.name,
+        id: product.id,
         name: product.name,
         price: product.price,
         image: product.image,
         quantity: 1,
         category: product.category,
-        carType: product.carType
+        carType: product.carType,
+        stock: product.stock
       };
       const updatedCart = [...cartItems, cartItem];
       setCartItems(updatedCart);
@@ -176,19 +198,20 @@ const Store = () => {
 
   const cartItemCount = cartItems.reduce((sum: number, item: any) => sum + item.quantity, 0);
 
-  const filteredProducts = allProducts.filter(
-    (product) => {
-      const matchesSearch = product.name.includes(searchTerm) ||
-                           product.category.includes(searchTerm) ||
-                           product.description.includes(searchTerm);
+  // Memoize filtered products for better performance
+  const filteredProducts = useMemo(() => {
+    return allProducts.filter((product) => {
+      const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            product.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            product.description.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCarType = carTypeFilter === "" || carTypeFilter === "all" || product.carType === carTypeFilter;
       const matchesCategory = categoryFilter === "" || categoryFilter === "all" || product.category === categoryFilter;
       return matchesSearch && matchesCarType && matchesCategory;
-    }
-  );
+    });
+  }, [allProducts, searchTerm, carTypeFilter, categoryFilter]);
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-orange-500/5 dark:bg-black dark:from-black dark:via-gray-900/20 dark:to-gray-800/20 transition-colors duration-500">
       <Navigation />
       <main className="pt-24 pb-20">
         <div className="container mx-auto px-4">
@@ -248,60 +271,124 @@ const Store = () => {
             </div>
           </div>
 
+          {/* Loading State */}
+          {loading && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <div key={index} className="bg-card/90 dark:bg-gray-900/90 rounded-2xl p-6 border border-border/50">
+                  <div className="bg-muted/50 rounded-xl h-48 mb-4 overflow-hidden">
+                    <Skeleton className="w-full h-full" />
+                  </div>
+                  <div className="text-right mb-4">
+                    <Skeleton className="h-4 w-16 mb-1" />
+                    <Skeleton className="h-6 w-32 mb-2" />
+                    <Skeleton className="h-4 w-full mb-2" />
+                    <Skeleton className="h-4 w-24 mb-3" />
+                    <div className="flex items-center justify-between">
+                      <Skeleton className="h-4 w-8" />
+                      <Skeleton className="h-8 w-16" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-10 w-full rounded-full" />
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Products Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredProducts.map((product, index) => (
-              <div
-                key={index}
-                className="group bg-card rounded-2xl p-6 border border-border hover:border-primary transition-all hover-lift hover-glow animate-slide-up"
-                style={{ animationDelay: `${index * 0.03}s` }}
-              >
-                {/* Product image */}
-                <div className="bg-muted/50 rounded-xl h-48 mb-4 overflow-hidden">
-                  <img 
-                    src={product.image} 
-                    alt={product.name} 
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                  />
-                </div>
-
-                <div className="text-right mb-4">
-                  <div className="text-xs text-muted-foreground mb-1">
-                    {product.category} • {product.carType}
+          {!loading && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {filteredProducts.map((product, index) => (
+                <div
+                  key={product.id}
+                  className="group bg-card/90 dark:bg-gray-900/90 rounded-2xl p-6 border border-border/50 dark:border-gray-700/50 hover:border-primary transition-all hover-lift hover-glow animate-slide-up transition-colors duration-300"
+                  style={{ animationDelay: `${index * 0.03}s` }}
+                >
+                  {/* Product image */}
+                  <div className="bg-muted/50 rounded-xl h-48 mb-4 overflow-hidden">
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                    />
                   </div>
-                  <h3 className="font-bold text-lg mb-2">{product.name}</h3>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    {product.description}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">جنيه</span>
-                    <span className="text-2xl font-bold text-primary">
-                      {product.price}
-                    </span>
-                  </div>
-                </div>
 
-                {user && user.role === 'client' ? (
-                  <Button
-                    onClick={() => addToCart(product)}
-                    className="w-full rounded-full bg-primary hover:bg-primary-hover"
-                  >
-                    <Plus className="h-4 w-4 ml-2" />
-                    أضف للسلة
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => navigate('/auth?mode=login')}
-                    variant="outline"
-                    className="w-full rounded-full"
-                  >
-                    <LogIn className="h-4 w-4 ml-2" />
-                    تسجيل الدخول للشراء
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
+                  <div className="text-right mb-4">
+                    <div className="text-xs text-muted-foreground mb-1">
+                      {product.category} • {product.carType}
+                    </div>
+                    <h3 className="font-bold text-lg mb-2">{product.name}</h3>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      {product.description}
+                    </p>
+                    <p className="text-xs text-blue-600 font-medium mb-3">
+                      من: {product.workshopName}
+                    </p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">جنيه</span>
+                      <span className="text-2xl font-bold text-primary">
+                        {product.price}
+                      </span>
+                    </div>
+                  </div>
+
+                  {user && user.role === 'client' ? (
+                    <Button
+                      onClick={() => addToCart(product)}
+                      className="w-full rounded-full bg-primary hover:bg-primary-hover"
+                    >
+                      <Plus className="h-4 w-4 ml-2" />
+                      أضف للسلة
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => navigate('/auth?mode=login')}
+                      variant="outline"
+                      className="w-full rounded-full"
+                    >
+                      <LogIn className="h-4 w-4 ml-2" />
+                      تسجيل الدخول للشراء
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {!loading && totalPages > 1 && (
+            <div className="mt-12">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                    <PaginationItem key={page}>
+                      <PaginationLink
+                        onClick={() => setCurrentPage(page)}
+                        isActive={currentPage === page}
+                        className="cursor-pointer"
+                      >
+                        {page}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ))}
+
+                  <PaginationItem>
+                    <PaginationNext
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
 
           {filteredProducts.length === 0 && (
             <div className="text-center py-20">

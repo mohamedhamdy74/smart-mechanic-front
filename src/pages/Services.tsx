@@ -81,7 +81,7 @@ const allServices = [
 
 const Services = () => {
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-orange-500/5 dark:bg-black dark:from-black dark:via-gray-900/20 dark:to-gray-800/20 transition-colors duration-500">
       <Navigation />
       <main className="pt-24 pb-20">
         <div className="container mx-auto px-4">
@@ -100,7 +100,7 @@ const Services = () => {
               return (
                 <div
                   key={index}
-                  className="group bg-card rounded-2xl p-6 border border-border hover:border-primary transition-all hover-lift hover-glow animate-slide-up"
+                  className="group bg-card/90 dark:bg-gray-900/90 rounded-2xl p-6 border border-border/50 dark:border-gray-700/50 hover:border-primary transition-all hover-lift hover-glow animate-slide-up transition-colors duration-300"
                   style={{ animationDelay: `${index * 0.05}s` }}
                 >
                   <div className="flex items-start gap-4 mb-4">
@@ -120,7 +120,7 @@ const Services = () => {
                     className="w-full rounded-full"
                     variant="outline"
                   >
-                    <Link to="/auth?mode=register">احجز الآن</Link>
+                    <Link to={`/mechanics?service=${encodeURIComponent(service.title)}`}>احجز الآن</Link>
                   </Button>
                 </div>
               );
@@ -128,7 +128,7 @@ const Services = () => {
           </div>
 
           {/* CTA Section */}
-          <div className="bg-gradient-hero rounded-3xl p-8 md:p-12 text-center">
+          <div className="bg-gradient-hero dark:bg-gradient-to-br dark:from-gray-900/50 dark:via-gray-800/30 dark:to-black rounded-3xl p-8 md:p-12 text-center transition-colors duration-300">
             <h2 className="text-2xl md:text-3xl font-bold mb-4">
               هل تحتاج خدمة خاصة؟
             </h2>

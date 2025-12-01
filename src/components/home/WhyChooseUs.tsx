@@ -35,10 +35,10 @@ const features = [
 
 export const WhyChooseUs = () => {
   return (
-    <section className="py-20">
-      <div className="container mx-auto px-4">
-        <div className="text-center mb-16 animate-fade-in">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
+    <section className="py-20 bg-muted/20 dark:bg-gray-900/20 transition-colors duration-500">
+      <div className="container mx-auto px-6">
+        <div className="text-center mb-16 animate-bounce-in">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4 bg-gradient-to-r from-primary to-orange-500 bg-clip-text text-transparent">
             لماذا تختارنا؟
           </h2>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
@@ -46,22 +46,22 @@ export const WhyChooseUs = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {features.map((feature, index) => {
             const Icon = feature.icon;
             return (
               <div
                 key={index}
-                className="group p-6 bg-card rounded-2xl border border-border hover:border-primary transition-all hover-lift hover-glow animate-slide-up"
-                style={{ animationDelay: `${index * 0.1}s` }}
+                className="group p-8 bg-card rounded-3xl border border-border hover:border-primary transition-all duration-500 hover-lift animate-fade-in-up shadow-lg hover:shadow-xl hover:scale-105"
+                style={{ animationDelay: `${index * 0.2}s` }}
               >
                 <div className="flex items-start gap-4">
-                  <div className="p-3 bg-primary/10 rounded-xl group-hover:bg-primary/20 transition-colors">
-                    <Icon className="h-6 w-6 text-primary" />
+                  <div className="p-4 bg-gradient-to-br from-primary/10 to-orange-500/10 rounded-2xl group-hover:from-primary/15 group-hover:to-orange-500/15 transition-all duration-300">
+                    <Icon className="h-8 w-8 text-primary" />
                   </div>
                   <div className="flex-1 text-right">
-                    <h3 className="font-bold text-lg mb-2">{feature.title}</h3>
-                    <p className="text-muted-foreground text-sm">
+                    <h3 className="font-bold text-xl mb-4">{feature.title}</h3>
+                    <p className="text-muted-foreground text-base leading-relaxed pb-2">
                       {feature.description}
                     </p>
                   </div>
