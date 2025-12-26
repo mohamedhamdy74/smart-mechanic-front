@@ -54,5 +54,6 @@ export interface SystemStats {
     total: number;
     fromOrders: number;
     fromBookings: number;
+    platformProfits: number;
   };
 }

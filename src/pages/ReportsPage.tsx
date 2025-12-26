@@ -74,7 +74,7 @@ const ReportsPage = () => {
       ])
     ];
 
-    const csvContent = csvData.map(row => row.join(',')).join('\n');
+    const csvContent = "\uFEFF" + csvData.map(row => row.join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);

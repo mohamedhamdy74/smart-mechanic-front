@@ -1,4 +1,4 @@
- import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -23,6 +23,7 @@ interface Mechanic {
   email: string;
   location: string;
   completedBookings?: number;
+  profileImage?: string;
 }
 
 interface MapComponentProps {
@@ -655,7 +656,7 @@ const initializeMap = (mapContainer: HTMLElement, options: any = {}) => {
   tileLayer.addTo(mapInstance);
 
   // Add tile load error handling
-  tileLayer.on('tileerror', function(e) {
+  tileLayer.on('tileerror', function (e) {
     console.warn('Tile failed to load:', e);
   });
 
@@ -819,8 +820,11 @@ const addMechanicMarker = (mechanic: Mechanic) => {
     .bindPopup(`
       <div class="p-4 max-w-sm" dir="rtl">
         <div class="flex items-center mb-3">
-          <div class="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center mr-3">
-            <span class="text-white font-bold text-lg">${mechanic.name.charAt(0)}</span>
+          <div class="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center mr-3 overflow-hidden">
+            ${mechanic.profileImage
+        ? `<img src="http://localhost:5000/${mechanic.profileImage}" alt="${mechanic.name}" class="w-full h-full object-cover" />`
+        : `<span class="text-white font-bold text-lg">${mechanic.name.charAt(0)}</span>`
+      }
           </div>
           <div class="flex-1">
             <h3 class="font-bold text-gray-900 text-lg mb-1">${mechanic.name}</h3>

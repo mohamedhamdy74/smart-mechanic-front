@@ -52,6 +52,7 @@ const MechanicPublicProfile = () => {
         completedServices: data.completedBookings || 0,
         responseTime: `${data.responseTime || 0} دقيقة`,
         availabilityStatus: data.availabilityStatus || "available",
+        profileImage: data.profileImage,
       };
     },
     enabled: !!id,
@@ -126,8 +127,12 @@ const MechanicPublicProfile = () => {
           {/* Profile Header */}
           <div className="bg-gradient-to-br from-primary/10 via-orange-500/5 to-background rounded-3xl p-10 mb-10 animate-bounce-in shadow-2xl border border-border/50">
             <div className="flex flex-col md:flex-row items-center gap-6">
-              <div className="w-32 h-32 rounded-full bg-primary/20 flex items-center justify-center border-4 border-white">
-                <User className="h-16 w-16 text-primary" />
+              <div className="w-32 h-32 rounded-full bg-primary/20 flex items-center justify-center border-4 border-white overflow-hidden shadow-lg">
+                {mechanicData.profileImage ? (
+                  <img src={`http://localhost:5000/${mechanicData.profileImage}`} alt={mechanicData.name} className="w-full h-full object-cover" />
+                ) : (
+                  <User className="h-16 w-16 text-primary" />
+                )}
               </div>
               <div className="text-center md:text-right flex-1">
                 <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-primary to-orange-500 bg-clip-text text-transparent">
@@ -144,11 +149,10 @@ const MechanicPublicProfile = () => {
                     {Array.from({ length: 5 }).map((_, i) => (
                       <Star
                         key={i}
-                        className={`h-5 w-5 ${
-                          i < Math.floor(mechanicData.rating)
+                        className={`h-5 w-5 ${i < Math.floor(mechanicData.rating)
                             ? "fill-yellow-500 text-yellow-500"
                             : "text-muted-foreground"
-                        }`}
+                          }`}
                       />
                     ))}
                   </div>

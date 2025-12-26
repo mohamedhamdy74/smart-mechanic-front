@@ -1,6 +1,7 @@
 import { Wrench, Droplet, Battery, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/contexts/SimpleAuthContext";
 import engineRepairImg from "@/assets/services/engine-repair.jpg";
 import oilChangeImg from "@/assets/services/oil-change.jpg";
 import tireServiceImg from "@/assets/services/tire-service.jpg";
@@ -34,6 +35,11 @@ const services = [
 ];
 
 export const Services = () => {
+  const { user } = useAuth();
+
+  // Check if user is workshop or mechanic
+  const hideServicesButton = user?.role === 'workshop' || user?.role === 'mechanic';
+
   return (
     <section className="py-24 bg-gradient-to-b from-background to-muted/30 dark:from-black dark:to-gray-900/30 transition-colors duration-500">
       <div className="container mx-auto px-6">
@@ -76,16 +82,18 @@ export const Services = () => {
           })}
         </div>
 
-        <div className="text-center">
-          <Button
-            asChild
-            size="lg"
-            variant="outline"
-            className="rounded-full border-2 hover:border-primary hover:bg-primary/5 px-8 py-6 text-lg font-semibold hover-lift transition-all duration-300"
-          >
-            <Link to="/services">عرض جميع الخدمات</Link>
-          </Button>
-        </div>
+        {!hideServicesButton && (
+          <div className="text-center">
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="rounded-full border-2 hover:border-primary hover:bg-primary/5 px-8 py-6 text-lg font-semibold hover-lift transition-all duration-300"
+            >
+              <Link to="/services">عرض جميع الخدمات</Link>
+            </Button>
+          </div>
+        )}
       </div>
     </section>
   );

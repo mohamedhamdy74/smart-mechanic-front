@@ -108,7 +108,8 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     if (!token) return;
 
     // Create socket connection
-    const newSocket = io('http://localhost:5000', {
+    const socketURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const newSocket = io(socketURL, {
       auth: {
         token: token,
       },

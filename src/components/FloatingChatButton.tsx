@@ -1,9 +1,16 @@
 import { MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/SimpleAuthContext";
 
 export const FloatingChatButton = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  // Hide for workshop and mechanic users
+  if (user?.role === 'workshop' || user?.role === 'mechanic') {
+    return null;
+  }
 
   return (
     <Button

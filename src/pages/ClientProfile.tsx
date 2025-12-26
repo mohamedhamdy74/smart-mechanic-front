@@ -371,6 +371,105 @@ const ClientProfile = () => {
     }
   };
 
+  // Helper function to calculate days remaining
+  const getDaysRemaining = (dueDate: string | Date): number => {
+    if (!dueDate) return 999; // Return large number for tasks without dueDate
+    const now = new Date();
+    const due = new Date(dueDate);
+    if (isNaN(due.getTime())) return 999; // Invalid date
+    const timeDiff = due.getTime() - now.getTime();
+    return Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+  };
+
+  // Helper function to get task color based on days remaining
+  const getTaskColor = (dueDate: string | Date, status: string) => {
+    if (status === 'completed') {
+      return {
+        bg: 'bg-gray-100',
+        border: 'border-gray-300',
+        text: 'text-gray-700',
+        icon: 'text-gray-500'
+      };
+    }
+
+    // Handle missing or invalid dueDate
+    if (!dueDate) {
+      return {
+        bg: 'bg-blue-50',
+        border: 'border-blue-200',
+        text: 'text-blue-900',
+        icon: 'text-blue-600'
+      };
+    }
+
+    const daysRemaining = getDaysRemaining(dueDate);
+
+    if (daysRemaining < 0) {
+      // Overdue - Red
+      return {
+        bg: 'bg-red-50',
+        border: 'border-red-300',
+        text: 'text-red-900',
+        icon: 'text-red-600'
+      };
+    } else if (daysRemaining <= 3) {
+      // Urgent - Red/Orange
+      return {
+        bg: 'bg-orange-50',
+        border: 'border-orange-300',
+        text: 'text-orange-900',
+        icon: 'text-orange-600'
+      };
+    } else if (daysRemaining <= 7) {
+      // Due soon - Yellow
+      return {
+        bg: 'bg-yellow-50',
+        border: 'border-yellow-300',
+        text: 'text-yellow-900',
+        icon: 'text-yellow-600'
+      };
+    } else if (daysRemaining <= 14) {
+      // Upcoming - Light green
+      return {
+        bg: 'bg-green-50',
+        border: 'border-green-200',
+        text: 'text-green-900',
+        icon: 'text-green-600'
+      };
+    } else {
+      // Far future - Green
+      return {
+        bg: 'bg-emerald-50',
+        border: 'border-emerald-200',
+        text: 'text-emerald-900',
+        icon: 'text-emerald-600'
+      };
+    }
+  };
+
+  // Handle completing a task
+  const handleCompleteTask = async (planId: string, taskId: string) => {
+    try {
+      const response = await fetch(`http://localhost:5000/maintenance/task/${planId}/${taskId}/complete`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        toast.success('تم تحديد المهمة كمكتملة');
+        refetchMaintenancePlan();
+      } else {
+        toast.error('فشل في تحديث المهمة');
+      }
+    } catch (error) {
+      console.error('Error completing task:', error);
+      toast.error('حدث خطأ في تحديث المهمة');
+    }
+  };
+
   const handleGeneratePlan = async () => {
     setIsGeneratingPlan(true);
     try {
@@ -480,7 +579,7 @@ const ClientProfile = () => {
                     <Car className="h-8 w-8 text-primary" />
                     معلومات السيارة
                   </h2>
-                  {/* <Button
+                  <Button
                     variant="outline"
                     size="sm"
                     className="rounded-full hover-lift transition-all duration-300 hover:border-primary hover:bg-primary/5"
@@ -488,7 +587,7 @@ const ClientProfile = () => {
                   >
                     <Edit className="h-4 w-4 ml-2" />
                     تعديل
-                  </Button> */}
+                  </Button>
                 </div>
                 <div className="grid grid-cols-2 gap-6 text-right">
                   <div>
@@ -1074,10 +1173,7 @@ const ClientProfile = () => {
                     <Calendar className="h-6 w-6 ml-3" />
                     حجز موعد جديد
                   </Button>
-                  <Button variant="outline" className="w-full rounded-full justify-start py-6 text-base hover-lift transition-all duration-300 hover:border-primary hover:bg-primary/5">
-                    <MapPin className="h-6 w-6 ml-3" />
-                    تتبع الميكانيكي
-                  </Button>
+
                   <Button variant="outline" className="w-full rounded-full justify-start py-6 text-base hover-lift transition-all duration-300 hover:border-primary hover:bg-primary/5">
                     <Wrench className="h-6 w-6 ml-3" />
                     تشخيص ذكي
@@ -1085,85 +1181,6 @@ const ClientProfile = () => {
                 </div>
               </Card>
 
-              {/* Upcoming Appointments */}
-              <Card className="p-6 animate-slide-up" style={{ animationDelay: "0.3s" }}>
-                <h3 className="font-bold mb-4 text-right">المواعيد القادمة</h3>
-                <div className="space-y-3">
-                  {/* Booked Appointments */}
-                  {bookedAppointments.map((appointment: any) => (
-                    <div key={appointment._id} className={`p-3 rounded-xl border ${appointment.status === 'accepted' ? 'bg-green-50 border-green-200' :
-                      appointment.status === 'rejected' ? 'bg-red-50 border-red-200' :
-                        'bg-blue-50 border-blue-200'
-                      }`}>
-                      <div className="flex items-center gap-2 mb-2">
-                        <Calendar className={`h-4 w-4 ${appointment.status === 'accepted' ? 'text-green-600' :
-                          appointment.status === 'rejected' ? 'text-red-600' :
-                            'text-blue-600'
-                          }`} />
-                        <p className={`font-semibold text-sm ${appointment.status === 'accepted' ? 'text-green-800' :
-                          appointment.status === 'rejected' ? 'text-red-800' :
-                            'text-blue-800'
-                          }`}>{appointment.serviceType}</p>
-                      </div>
-                      <p className={`text-xs mb-1 ${appointment.status === 'accepted' ? 'text-green-700' :
-                        appointment.status === 'rejected' ? 'text-red-700' :
-                          'text-blue-700'
-                        }`}>
-                        مع {appointment.mechanicId?.name || 'ميكانيكي'} - {new Date(appointment.appointmentDate).toLocaleDateString('ar-EG')} في {appointment.appointmentTime}
-                      </p>
-                      <p className={`text-xs mb-2 ${appointment.status === 'accepted' ? 'text-green-700' :
-                        appointment.status === 'rejected' ? 'text-red-700' :
-                          'text-blue-700'
-                        }`}>
-                        السيارة: {appointment.carInfo} - {appointment.licensePlate}
-                      </p>
-                      <Badge variant="outline" className={`text-xs ${appointment.status === 'accepted' ? 'border-green-300 text-green-700' :
-                        appointment.status === 'rejected' ? 'border-red-300 text-red-700' :
-                          'border-blue-300 text-blue-700'
-                        }`}>
-                        {appointment.status === 'pending' ? 'في انتظار التأكيد' :
-                          appointment.status === 'accepted' ? 'مؤكد من الميكانيكي' :
-                            appointment.status === 'rejected' ? 'مرفوض من الميكانيكي' :
-                              appointment.status === 'completed' ? 'مكتمل' :
-                                appointment.status}
-                      </Badge>
-                    </div>
-                  ))}
-
-                  {/* Default Appointments */}
-                  {bookedAppointments.length === 0 && (
-                    <>
-                      <div className="p-3 rounded-xl bg-primary/5 border border-primary/20">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Calendar className="h-4 w-4 text-primary" />
-                          <p className="font-semibold text-sm">صيانة دورية</p>
-                        </div>
-                        <p className="text-xs text-muted-foreground">12 يناير 2025 - 10:00 ص</p>
-                      </div>
-                      <div className="p-3 rounded-xl bg-orange-50 border border-orange-200">
-                        <div className="flex items-center gap-2 mb-2">
-                          <AlertTriangle className="h-4 w-4 text-orange-600" />
-                          <p className="font-semibold text-sm text-orange-800">تذكير: تغيير زيت المحرك</p>
-                        </div>
-                        <p className="text-xs text-orange-700">مستحق خلال 500 كم - 15 يناير 2025</p>
-                        <Badge variant="outline" className="mt-2 text-xs border-orange-300 text-orange-700">
-                          مستحق قريباً
-                        </Badge>
-                      </div>
-                      <div className="p-3 rounded-xl bg-red-50 border border-red-200">
-                        <div className="flex items-center gap-2 mb-2">
-                          <AlertTriangle className="h-4 w-4 text-red-600" />
-                          <p className="font-semibold text-sm text-red-800">فحص الفرامل</p>
-                        </div>
-                        <p className="text-xs text-red-700">متأخر عن الموعد المحدد - 30 ديسمبر 2024</p>
-                        <Badge variant="outline" className="mt-2 text-xs border-red-300 text-red-700">
-                          مستحق فوراً
-                        </Badge>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </Card>
 
               {/* Maintenance Tasks */}
               <Card className="p-6 animate-slide-up" style={{ animationDelay: "0.4s" }}>
@@ -1296,72 +1313,103 @@ const ClientProfile = () => {
                     {maintenancePlan.upcoming && maintenancePlan.upcoming.length > 0 ? (
                       <div className="space-y-3">
                         <h4 className="font-semibold text-right">المهام القادمة</h4>
-                        {maintenancePlan.upcoming.map((task: any, index: number) => (
-                          <div key={index} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1 text-right space-y-2">
-                                <div className="flex items-center gap-2 justify-end">
-                                  <h4 className="font-semibold">{task.task}</h4>
-                                  {task.priority && (
-                                    <Badge
-                                      variant={
-                                        task.priority === 'High' ? 'destructive' :
-                                          task.priority === 'Medium' ? 'default' :
-                                            'secondary'
-                                      }
-                                      className="text-xs"
-                                    >
-                                      {task.priority === 'High' ? 'عاجل' :
-                                        task.priority === 'Medium' ? 'متوسط' :
-                                          'عادي'}
-                                    </Badge>
-                                  )}
-                                </div>
-                                <div className="flex flex-wrap gap-4 text-sm text-muted-foreground justify-end">
-                                  {task.dueAtKM && (
-                                    <span className="flex items-center gap-1">
-                                      <span>{task.dueAtKM.toLocaleString()} كم</span>
-                                      <Car className="h-4 w-4" />
-                                    </span>
-                                  )}
-                                  {task.estimatedDays && (
-                                    <span className="flex items-center gap-1">
-                                      <span>خلال {task.estimatedDays} يوم</span>
-                                      <Clock className="h-4 w-4" />
-                                    </span>
-                                  )}
+                        {maintenancePlan.upcoming
+                          .filter((task: any) => task.dueDate) // Only show tasks with dueDate
+                          .map((task: any, index: number) => {
+                            const colors = getTaskColor(task.dueDate, task.status);
+                            const daysRemaining = getDaysRemaining(task.dueDate);
+                            const dueDate = new Date(task.dueDate).toLocaleDateString('ar-EG');
+
+                            return (
+                              <div key={index} className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${colors.bg} ${colors.border}`}>
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1 text-right space-y-2">
+                                    <div className="flex items-center gap-2 justify-end flex-wrap">
+                                      <h4 className={`font-semibold ${colors.text}`}>{task.task}</h4>
+                                      {task.priority && (
+                                        <Badge
+                                          variant={
+                                            task.priority === 'High' ? 'destructive' :
+                                              task.priority === 'Medium' ? 'default' :
+                                                'secondary'
+                                          }
+                                          className="text-xs"
+                                        >
+                                          {task.priority === 'High' ? 'عاجل' :
+                                            task.priority === 'Medium' ? 'متوسط' :
+                                              'عادي'}
+                                        </Badge>
+                                      )}
+                                      {task.status === 'completed' && (
+                                        <Badge variant="outline" className="text-xs border-gray-400 text-gray-700">
+                                          ✓ مكتمل
+                                        </Badge>
+                                      )}
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-4 text-sm justify-end">
+                                      {task.dueAtKM && (
+                                        <span className={`flex items-center gap-1 ${colors.text}`}>
+                                          <span>{task.dueAtKM.toLocaleString()} كم</span>
+                                          <Car className="h-4 w-4" />
+                                        </span>
+                                      )}
+                                      <span className={`flex items-center gap-1 ${colors.text}`}>
+                                        <span>{dueDate}</span>
+                                        <Calendar className="h-4 w-4" />
+                                      </span>
+                                    </div>
+
+                                    {/* Days remaining indicator */}
+                                    <div className={`flex items-center gap-2 justify-end text-sm font-semibold ${colors.text}`}>
+                                      {daysRemaining < 0 ? (
+                                        <>
+                                          <span>متأخر {Math.abs(daysRemaining)} يوم</span>
+                                          <AlertTriangle className={`h-4 w-4 ${colors.icon}`} />
+                                        </>
+                                      ) : daysRemaining === 0 ? (
+                                        <>
+                                          <span>مستحق اليوم!</span>
+                                          <Clock className={`h-4 w-4 ${colors.icon}`} />
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span>متبقي {daysRemaining} يوم</span>
+                                          <Clock className={`h-4 w-4 ${colors.icon}`} />
+                                        </>
+                                      )}
+                                    </div>
+
+                                    {/* Complete button */}
+                                    {task.status !== 'completed' && (
+                                      <div className="flex justify-end mt-2">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => handleCompleteTask(maintenancePlan._id, task._id)}
+                                          className="rounded-full text-xs"
+                                        >
+                                          <CheckCircle className="h-3 w-3 ml-1" />
+                                          تم الإنجاز
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </div>
-                        ))}
+                            );
+                          })}
                       </div>
                     ) : (
                       <p className="text-center text-muted-foreground py-8">
                         لا توجد مهام صيانة قادمة حالياً
                       </p>
                     )}
-
-                    {/* Regenerate Plan Button */}
-                    <Button
-                      onClick={handleGeneratePlan}
-                      disabled={isGeneratingPlan}
-                      className="w-full rounded-full"
-                      variant="outline"
-                    >
-                      {isGeneratingPlan ? 'جاري التحديث...' : 'تحديث الخطة'}
-                    </Button>
                   </div>
                 ) : (
                   <div className="text-center py-8 space-y-4">
-                    <p className="text-muted-foreground">لم يتم إنشاء خطة صيانة بعد</p>
-                    <Button
-                      onClick={handleGeneratePlan}
-                      disabled={isGeneratingPlan}
-                      className="rounded-full"
-                    >
-                      {isGeneratingPlan ? 'جاري الإنشاء...' : 'إنشاء خطة صيانة'}
-                    </Button>
+                    <p className="text-muted-foreground">لم يتم إضافة أي مهام صيانة بعد</p>
+                    <p className="text-sm text-muted-foreground">استخدم زر "إضافة مهمة" لإضافة مهام الصيانة الخاصة بك</p>
                   </div>
                 )}
 

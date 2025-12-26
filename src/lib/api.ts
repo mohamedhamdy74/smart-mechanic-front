@@ -26,7 +26,7 @@ import {
 
 // Create axios instance with default config
 export const api = axios.create({
-  baseURL: 'http://localhost:5000',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -63,7 +63,8 @@ api.interceptors.response.use(
         // Try to refresh the access token
         const refreshToken = localStorage.getItem('refreshToken');
         if (refreshToken) {
-          const refreshResponse = await axios.post('http://localhost:5000/auth/refresh', {
+          const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+          const refreshResponse = await axios.post(`${baseURL}/auth/refresh`, {
             refreshToken
           });
 

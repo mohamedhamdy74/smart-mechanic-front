@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/form";
 import { useAuth } from "@/contexts/SimpleAuthContext";
 import { useAuthToken } from "@/hooks/useAuthToken";
-import { UserCheck, Wrench, Building2, Eye, EyeOff, Shield } from "lucide-react";
+import { UserCheck, Wrench, Building2, Eye, EyeOff, Shield, MapPin, Upload, Image as ImageIcon } from "lucide-react";
 
 const loginSchema = z.object({
   userType: z.string().min(1, "يرجى اختيار نوع المستخدم"),
@@ -129,6 +129,10 @@ const Auth = () => {
         // Redirect based on user role
         if (user.role === 'admin') {
           navigate("/admin");
+        } else if (user.role === 'mechanic') {
+          navigate("/profile/mechanic");
+        } else if (user.role === 'workshop') {
+          navigate("/profile/workshop");
         } else {
           navigate("/");
         }
@@ -137,6 +141,58 @@ const Auth = () => {
       }
     } catch (error) {
       toast.error("حدث خطأ في تسجيل الدخول");
+    }
+  };
+
+  const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  // Function to get current location
+  const handleGetLocation = () => {
+    setLocationLoading(true);
+    if (!navigator.geolocation) {
+      toast.error("متصفحك لا يدعم تحديد الموقع");
+      setLocationLoading(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCoordinates({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+        setLocationLoading(false);
+        toast.success("تم تحديد الموقع بنجاح");
+      },
+      (error) => {
+        console.error("Error getting location:", error);
+        toast.error("فشل في تحديد الموقع - يرجى السماح بالوصول للموقع");
+        setLocationLoading(false);
+      }
+    );
+  };
+
+  // Function to handle image selection
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("حجم الصورة يجب أن يكون أقل من 5 ميجابايت");
+        return;
+      }
+      if (!file.type.startsWith('image/')) {
+        toast.error("يرجى اختيار ملف صورة فقط");
+        return;
+      }
+      setSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -190,7 +246,7 @@ const Auth = () => {
         role: userRole,
         phone: data.phone || undefined,
         location: data.location || data.address || data.dealership || 'أسوان',
-        mileage: data.mileage ? parseInt(data.mileage) : undefined,
+        mileage: data.mileage !== "" ? parseInt(data.mileage) : undefined,
         description: data.description,
         services: data.services ? data.services.split(',').map(s => s.trim()) : undefined,
         workingHours: data.workingHours,
@@ -212,9 +268,47 @@ const Auth = () => {
         // Read user from localStorage (register now stores tokens + user)
         const user = JSON.parse(localStorage.getItem('user') || '{}');
 
+        // Step 2: If mechanic and coordinates exist, update location immediately
+        if (userRole === 'mechanic' && coordinates && user.id) {
+          try {
+            const { api } = await import('@/lib/api');
+            // Update location using the axios instance (which handles token automatically)
+            await api.post(`/users/${user.id}/location`, {
+              latitude: coordinates.lat,
+              longitude: coordinates.lng
+            });
+            console.log("Location coordinates updated successfully via frontend 2-step process");
+          } catch (locError) {
+            console.error("Failed to update coordinates after registration:", locError);
+            // Don't block the redirect, just log the error
+          }
+        }
+
+        // Step 3: If mechanic and image selected, upload avatar
+        if (userRole === 'mechanic' && selectedImage && user.id) {
+          try {
+            const { api } = await import('@/lib/api');
+            const formData = new FormData();
+            formData.append('avatar', selectedImage);
+            await api.post(`/users/${user.id}/avatar`, formData, {
+              headers: {
+                'Content-Type': 'multipart/form-data'
+              }
+            });
+            console.log("Avatar uploaded successfully");
+          } catch (avatarError) {
+            console.error("Failed to upload avatar:", avatarError);
+            // Don't block the redirect, just log the error
+          }
+        }
+
         // Redirect based on role (same logic as login)
         if (user && user.role === 'admin') {
           navigate("/admin");
+        } else if (user && user.role === 'mechanic') {
+          navigate("/profile/mechanic");
+        } else if (user && user.role === 'workshop') {
+          navigate("/profile/workshop");
         } else {
           navigate("/");
         }
@@ -726,22 +820,79 @@ const Auth = () => {
                       )}
                     />
 
+
+                    <div className="space-y-2">
+                      <Label className="text-right block font-semibold">الموقع الجغرافي</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleGetLocation}
+                        disabled={locationLoading}
+                        className="w-full flex items-center justify-center gap-2"
+                      >
+                        <MapPin className="h-4 w-4" />
+                        {locationLoading ? "جاري تحديد الموقع..." : coordinates ? "تم تحديد الموقع بنجاح ✅" : "تحديد موقعي الحالي"}
+                      </Button>
+                      {coordinates && (
+                        <p className="text-xs text-green-600 text-right">
+                          تم حفظ الإحداثيات: {coordinates.lat.toFixed(4)}, {coordinates.lng.toFixed(4)}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-right block font-semibold">الصورة الشخصية</Label>
+                      <div className="flex flex-col items-center gap-4">
+                        {imagePreview && (
+                          <div className="relative w-32 h-32 rounded-full overflow-hidden border-4 border-primary/20">
+                            <img src={imagePreview} alt="معاينة" className="w-full h-full object-cover" />
+                          </div>
+                        )}
+                        <div className="w-full">
+                          <input
+                            type="file"
+                            id="avatar-upload"
+                            accept="image/*"
+                            onChange={handleImageSelect}
+                            className="hidden"
+                          />
+                          <label htmlFor="avatar-upload">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full flex items-center justify-center gap-2 cursor-pointer"
+                              onClick={() => document.getElementById('avatar-upload')?.click()}
+                            >
+                              <Upload className="h-4 w-4" />
+                              {selectedImage ? "تغيير الصورة" : "اختر صورة شخصية"}
+                            </Button>
+                          </label>
+                          {selectedImage && (
+                            <p className="text-xs text-green-600 text-right mt-2">
+                              تم اختيار: {selectedImage.name}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="space-y-2">
                       <Label className="text-right block font-semibold">التخصصات المقدمة *</Label>
                       <div className="space-y-2">
                         {[
-                          "ميكانيكي عام",
-                          "إصلاح المحركات",
-                          "إصلاح الكهرباء",
-                          "إصلاح الفرامل",
-                          "تغيير الزيوت",
-                          "إصلاح الإطارات",
-                          "فحص شامل",
-                          "إصلاح ناقل الحركة",
-                          "صيانة دورية",
-                          "إصلاح الهيكل",
-                          "طلاء السيارات",
-                          "إزالة الصدأ"
+                          "صيانة عامة",
+                          "محرك",
+                          "كهرباء",
+                          "عفشة",
+                          "فرامل",
+                          "تكييف",
+                          "جير",
+                          "إطارات",
+                          "سمكرة ودوكو",
+                          "فحص كمبيوتر",
+                          "ضبط زوايا",
+                          "تغيير زيوت وفلاتر",
+                          "زجاج"
                         ].map((service, index) => (
                           <div key={index} className="flex items-center gap-2">
                             <input

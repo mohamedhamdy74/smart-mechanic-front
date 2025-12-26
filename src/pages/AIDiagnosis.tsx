@@ -6,6 +6,9 @@ import { Upload, Mic, MessageSquare, Lightbulb, Loader2, Star, MapPin, MessageCi
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/SimpleAuthContext";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import ChatComponent from "@/features/chat/ChatComponent";
 
 const AIDiagnosis = () => {
   const API_URL = "http://localhost:5000/ai/diagnose";
@@ -16,6 +19,9 @@ const AIDiagnosis = () => {
   const [loading, setLoading] = useState(false);
   const [diagnosisText, setDiagnosisText] = useState<string | null>(null);
   const [recommendedMechanic, setRecommendedMechanic] = useState<any>(null);
+  const { user } = useAuth();
+  const [showChat, setShowChat] = useState(false);
+  const [selectedMechanicForChat, setSelectedMechanicForChat] = useState<any>(null);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -107,6 +113,16 @@ const AIDiagnosis = () => {
       } finally {
         setLoading(false);
       }
+    }
+  };
+
+  const handleChatWithMechanic = (mechanic: any) => {
+    if (user && user.role === 'client') {
+      setSelectedMechanicForChat(mechanic);
+      setShowChat(true);
+    } else {
+      toast.error("يجب تسجيل الدخول كعميل أولاً للدردشة");
+      navigate('/auth?mode=login');
     }
   };
 
@@ -274,7 +290,10 @@ const AIDiagnosis = () => {
                             </Button>
 
                             <Button
-                              onClick={() => navigate(`/chat?userId=${recommendedMechanic._id}`)}
+                              onClick={() => handleChatWithMechanic({
+                                id: recommendedMechanic._id,
+                                name: recommendedMechanic.name
+                              })}
                               variant="outline"
                               className="px-8 py-6 rounded-xl text-lg font-bold border-2 hover:bg-secondary/50 transition-all duration-300 flex items-center gap-2"
                             >
@@ -348,6 +367,18 @@ const AIDiagnosis = () => {
         </div>
       </main>
       <Footer />
+
+      <Dialog open={showChat} onOpenChange={setShowChat}>
+        <DialogContent className="max-w-3xl h-[600px] p-0 flex flex-col" hideClose={true}>
+          {selectedMechanicForChat && (
+            <ChatComponent
+              otherUserId={selectedMechanicForChat.id}
+              otherUserName={selectedMechanicForChat.name}
+              onClose={() => setShowChat(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

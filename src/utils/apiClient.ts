@@ -175,7 +175,8 @@ class ApiClient {
 
 // Export a function to create the API client with Redux store access
 export const createApiClient = (getState: () => RootState) => {
-  return new ApiClient('http://localhost:5000', getState);
+  const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  return new ApiClient(baseURL, getState);
 };
 
 export default ApiClient;

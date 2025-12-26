@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from '../../components/ui/avatar';
 import { MessageCircle, Send, X, Wrench, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createChatRoom } from '../../services/chatService';
+import { socketService } from '../../services/socketService';
 import { api } from '../../lib/api';
 import { useAuth } from '../../contexts/SimpleAuthContext';
 import { toast } from 'sonner';
@@ -52,6 +53,50 @@ const ChatComponent: React.FC<ChatComponentProps> = ({
   useEffect(() => {
     loadMessages();
   }, [chatRoomId]);
+
+  useEffect(() => {
+    // Connect to socket when component mounts
+    if (currentUserId) {
+      socketService.connect(currentUserId);
+    }
+
+    const socket = socketService.getSocket();
+
+    if (socket) {
+      const handleReceiveMessage = (newMessage: any) => {
+        // Only add message if it belongs to current chat room
+        if (newMessage.chatRoomId === chatRoomId) {
+          console.log('New message received via socket:', newMessage);
+
+          // Ensure correct format for message
+          const formattedMessage: Message = {
+            _id: newMessage._id,
+            senderId: newMessage.senderId,
+            receiverId: newMessage.receiverId,
+            messageText: newMessage.messageText,
+            createdAt: newMessage.createdAt,
+            isRead: false,
+            senderId_info: newMessage.senderId_info // May be populated from backend
+          };
+
+          setMessages(prev => [...prev, formattedMessage]);
+
+          // If we are viewing this chat, mark as read immediately
+          try {
+            api.patch(`/messages/${chatRoomId}/read`);
+          } catch (e) {
+            console.error("Failed to mark socket message as read", e);
+          }
+        }
+      };
+
+      socket.on('receive_message', handleReceiveMessage);
+
+      return () => {
+        socket.off('receive_message', handleReceiveMessage);
+      };
+    }
+  }, [currentUserId, chatRoomId]);
 
   useEffect(() => {
     scrollToBottom();
@@ -180,8 +225,8 @@ const ChatComponent: React.FC<ChatComponentProps> = ({
                         </AvatarFallback>
                       </Avatar>
                       <div className={`rounded-lg px-3 py-2 ${isCurrentUser
-                          ? 'bg-orange-500 text-white'
-                          : 'bg-gray-100 text-gray-900'
+                        ? 'bg-orange-500 text-white'
+                        : 'bg-gray-100 text-gray-900'
                         }`}>
                         <p className="text-sm">{message.messageText}</p>
                         <p className={`text-xs mt-1 ${isCurrentUser ? 'text-orange-100' : 'text-gray-500'

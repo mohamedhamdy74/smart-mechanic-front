@@ -80,6 +80,9 @@ const EditMechanicProfile = () => {
             location: userProfile.location || "",
             bio: userProfile.bio || "",
           });
+          if (userProfile.profileImage) {
+            setImagePreview(`http://localhost:5000/${userProfile.profileImage}`);
+          }
         } else {
           throw new Error("فشل في تحميل بيانات المستخدم");
         }

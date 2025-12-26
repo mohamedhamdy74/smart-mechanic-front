@@ -1,5 +1,14 @@
-import { useState, useEffect, useMemo } from "react";
+﻿import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+  PaginationEllipsis,
+} from "@/components/ui/pagination";
 import {
   Card,
   CardContent,
@@ -105,6 +114,7 @@ import {
   Car,
   WrenchIcon,
   UserPlus,
+  LogOut,
 } from "lucide-react";
 import { Line, Bar, Pie, Doughnut } from "react-chartjs-2";
 import {
@@ -119,11 +129,9 @@ import {
   Legend,
   ArcElement,
 } from "chart.js";
-import { AddEditUserDialog } from "@/components/admin/AddEditUserDialog";
-import { AddEditMechanicDialog } from "@/components/admin/AddEditMechanicDialog";
-import { AddEditShopDialog } from "@/components/admin/AddEditShopDialog";
-import { AddEditProductDialog } from "@/components/admin/AddEditProductDialog";
 import logoIcon from "@/assets/logo-icon.png";
+import { useAuth } from "@/contexts/SimpleAuthContext";
+import { useNavigate } from "react-router-dom";
 
 // Register Chart.js components
 ChartJS.register(
@@ -139,23 +147,62 @@ ChartJS.register(
 );
 
 const AdminDashboard = () => {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [refreshing, setRefreshing] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Pagination states
+  const [usersPage, setUsersPage] = useState(1);
+  const [mechanicsPage, setMechanicsPage] = useState(1);
+  const [shopsPage, setShopsPage] = useState(1);
+  const [productsPage, setProductsPage] = useState(1);
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [orderDetailsOpen, setOrderDetailsOpen] = useState(false);
+
+  const ITEMS_PER_PAGE = 10;
+
+  const exportOrdersToCSV = (orders: any[]) => {
+    if (!orders || orders.length === 0) {
+      toast.error("لا توجد بيانات لتصديرها");
+      return;
+    }
+
+    const csvData = [
+      ["رقم الطلب", "التاريخ", "العميل", "الهاتف", "المنتجات", "المبلغ الإجمالي", "الحالة", "طريقة الدفع"],
+      ...orders.map((order) => [
+        order._id?.slice(-8) || "",
+        new Date(order.createdAt).toLocaleDateString("ar-EG"),
+        order.customerInfo?.name || order.userId?.name || "غير محدد",
+        order.customerInfo?.phone || order.userId?.phone || "غير محدد",
+        order.products?.map((p: any) => p.productId?.name || p.name || "منتج غير متوفر").join(" - "),
+        order.totalAmount || 0,
+        order.status === "pending" ? "قيد الانتظار" : order.status === "completed" ? "مكتمل" : "ملغي",
+        order.paymentMethod === "cod" ? "دفع عند الاستلام" : "دفع إلكتروني",
+      ]),
+    ];
+
+    const csvContent = "\uFEFF" + csvData.map((row) => row.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `طلبات_العملاء_${new Date().toISOString().split("T")[0]}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("تم تصدير البيانات بنجاح");
+  };
+
   const queryClient = useQueryClient();
 
-  // Dialog states
-  const [userDialogOpen, setUserDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [mechanicDialogOpen, setMechanicDialogOpen] = useState(false);
-  const [selectedMechanic, setSelectedMechanic] = useState(null);
-  const [shopDialogOpen, setShopDialogOpen] = useState(false);
-  const [selectedShop, setSelectedShop] = useState(null);
-  const [productDialogOpen, setProductDialogOpen] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  // No dialog states needed as Add/Edit functionality is removed
 
   // Simple animations
   const fadeInUp = {
@@ -178,12 +225,9 @@ const AdminDashboard = () => {
     data: stats,
     isLoading: statsLoading,
     refetch: refetchStats,
-  } = useQuery({
+  } = useQuery<SystemStats>({
     queryKey: ["admin-stats"],
-    queryFn: async () => {
-      const response = await adminApi.getStats();
-      return response;
-    },
+    queryFn: adminApi.getStats,
     staleTime: 30000,
     refetchInterval: 60000,
   });
@@ -193,12 +237,9 @@ const AdminDashboard = () => {
     data: analyticsData,
     isLoading: analyticsLoading,
     refetch: refetchAnalytics,
-  } = useQuery({
+  } = useQuery<any>({
     queryKey: ["admin-analytics", "30d"],
-    queryFn: async () => {
-      const response = await adminApi.getAnalytics({ period: "30d" });
-      return response;
-    },
+    queryFn: () => adminApi.getAnalytics({ period: "30d" }),
     staleTime: 60000,
     refetchInterval: 300000,
   });
@@ -208,72 +249,81 @@ const AdminDashboard = () => {
     data: usersData,
     isLoading: usersLoading,
     refetch: refetchUsers,
-  } = useQuery({
-    queryKey: ["admin-users", { search: searchTerm, role: selectedRole }],
-    queryFn: async () => {
-      const response = await adminApi.getUsers({
-        search: searchTerm || undefined,
-        role: selectedRole !== "all" ? selectedRole : undefined,
-        limit: 20,
-      });
-      return response;
-    },
+  } = useQuery<ListUsersResponse>({
+    queryKey: ["admin-users", { search: searchTerm, role: selectedRole, page: usersPage }],
+    queryFn: () => adminApi.getUsers({
+      search: searchTerm || undefined,
+      role: selectedRole !== "all" ? selectedRole : undefined,
+      page: usersPage,
+      limit: ITEMS_PER_PAGE,
+    }),
   });
+
+  // Reset page when search or filters change
+  useEffect(() => {
+    setUsersPage(1);
+  }, [searchTerm, selectedRole]);
 
   // Enhanced data fetching for mechanics
   const {
     data: mechanicsData,
     isLoading: mechanicsLoading,
     refetch: refetchMechanics,
-  } = useQuery({
-    queryKey: ["admin-mechanics", { search: searchTerm }],
-    queryFn: async () => {
-      const response = await adminApi.getMechanics({
-        search: searchTerm || undefined,
-        limit: 20,
-      });
-      return response;
-    },
+  } = useQuery<any>({
+    queryKey: ["admin-mechanics", { search: searchTerm, page: mechanicsPage }],
+    queryFn: () => adminApi.getMechanics({
+      search: searchTerm || undefined,
+      page: mechanicsPage,
+      limit: ITEMS_PER_PAGE,
+    }),
   });
+
+  useEffect(() => {
+    setMechanicsPage(1);
+  }, [searchTerm]);
 
   // Enhanced data fetching for shops
   const {
     data: shopsData,
     isLoading: shopsLoading,
     refetch: refetchShops,
-  } = useQuery({
-    queryKey: ["admin-shops", { search: searchTerm }],
-    queryFn: async () => {
-      const response = await adminApi.getShops({
-        search: searchTerm || undefined,
-        limit: 20,
-      });
-      return response;
-    },
+  } = useQuery<any>({
+    queryKey: ["admin-shops", { search: searchTerm, page: shopsPage }],
+    queryFn: () => adminApi.getShops({
+      search: searchTerm || undefined,
+      page: shopsPage,
+      limit: ITEMS_PER_PAGE,
+    }),
   });
+
+  useEffect(() => {
+    setShopsPage(1);
+  }, [searchTerm]);
 
   // Enhanced data fetching for products
   const {
     data: productsData,
     isLoading: productsLoading,
     refetch: refetchProducts,
-  } = useQuery({
-    queryKey: ["admin-products", { search: searchTerm }],
-    queryFn: async () => {
-      const response = await adminApi.getProducts({
-        search: searchTerm || undefined,
-        limit: 20,
-      });
-      return response;
-    },
+  } = useQuery<ListProductsResponse>({
+    queryKey: ["admin-products", { search: searchTerm, page: productsPage }],
+    queryFn: () => adminApi.getProducts({
+      search: searchTerm || undefined,
+      page: productsPage,
+      limit: ITEMS_PER_PAGE,
+    }),
   });
+
+  useEffect(() => {
+    setProductsPage(1);
+  }, [searchTerm]);
 
   // Enhanced data fetching for notifications
   const {
     data: notificationsData,
     isLoading: notificationsLoading,
     refetch: refetchNotifications,
-  } = useQuery({
+  } = useQuery<any>({
     queryKey: [
       "admin-notifications",
       {
@@ -281,14 +331,11 @@ const AdminDashboard = () => {
           selectedStatus === "all" ? undefined : selectedStatus === "read",
       },
     ],
-    queryFn: async () => {
-      const response = await adminApi.getNotifications({
-        isRead:
-          selectedStatus === "all" ? undefined : selectedStatus === "read",
-        limit: 20,
-      });
-      return response;
-    },
+    queryFn: () => adminApi.getNotifications({
+      isRead:
+        selectedStatus === "all" ? undefined : selectedStatus === "read",
+      limit: 20,
+    }),
   });
 
   // Enhanced data fetching for orders
@@ -296,31 +343,30 @@ const AdminDashboard = () => {
     data: ordersData,
     isLoading: ordersLoading,
     refetch: refetchOrders,
-  } = useQuery({
-    queryKey: ["admin-orders", { search: searchTerm }],
-    queryFn: async () => {
-      const response = await adminApi.getOrders({
-        search: searchTerm || undefined,
-        limit: 20,
-      });
-      return response;
-    },
+  } = useQuery<ListOrdersResponse>({
+    queryKey: ["admin-orders", { search: searchTerm, page: ordersPage }],
+    queryFn: () => adminApi.getOrders({
+      search: searchTerm || undefined,
+      page: ordersPage,
+      limit: ITEMS_PER_PAGE,
+    }),
   });
+
+  useEffect(() => {
+    setOrdersPage(1);
+  }, [searchTerm]);
 
   // Enhanced data fetching for appointments
   const {
     data: appointmentsData,
     isLoading: appointmentsLoading,
     refetch: refetchAppointments,
-  } = useQuery({
+  } = useQuery<any>({
     queryKey: ["admin-appointments", { search: searchTerm }],
-    queryFn: async () => {
-      const response = await adminApi.getAppointments({
-        search: searchTerm || undefined,
-        limit: 20,
-      });
-      return response;
-    },
+    queryFn: () => adminApi.getAppointments({
+      search: searchTerm || undefined,
+      limit: 20,
+    }),
   });
 
   // Enhanced data fetching for reviews
@@ -328,15 +374,34 @@ const AdminDashboard = () => {
     data: reviewsData,
     isLoading: reviewsLoading,
     refetch: refetchReviews,
-  } = useQuery({
+  } = useQuery<any>({
     queryKey: ["admin-reviews", { search: searchTerm }],
-    queryFn: async () => {
-      const response = await adminApi.getReviews({
-        search: searchTerm || undefined,
-        limit: 20,
-      });
-      return response;
-    },
+    queryFn: () => adminApi.getReviews({
+      search: searchTerm || undefined,
+      limit: 20,
+    }),
+  });
+
+  // Fetch pending registrations
+  const {
+    data: pendingRegistrations,
+    isLoading: pendingLoading,
+    refetch: refetchPending,
+  } = useQuery<{ users: any[] }>({
+    queryKey: ["admin-pending-registrations"],
+    queryFn: adminApi.getPendingRegistrations,
+  });
+
+  // Fetch recent activities
+  const {
+    data: activitiesData,
+    isLoading: activitiesLoading,
+    refetch: refetchActivities,
+  } = useQuery<{ activities: any[] }>({
+    queryKey: ["admin-activities"],
+    queryFn: adminApi.getActivities,
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 
   // Enhanced mutations for user actions
@@ -401,35 +466,12 @@ const AdminDashboard = () => {
   });
 
   // Enhanced mutations for CRUD operations
-  const createUserMutation = useMutation({
-    mutationFn: async (data: any) => {
-      if (data.role === "client") {
-        return await adminApi.registerClient(data);
-      } else if (data.role === "mechanic") {
-        return await adminApi.registerMechanic(data);
-      } else if (data.role === "workshop") {
-        return await adminApi.registerWorkshop(data);
-      }
-    },
-    onSuccess: () => {
-      toast.success("✅ تم إضافة المستخدم بنجاح");
-      setUserDialogOpen(false);
-      setSelectedUser(null);
-      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
-      refetchStats();
-    },
-    onError: () => {
-      toast.error("❌ فشل في إضافة المستخدم");
-    },
-  });
-
   const updateUserMutation = useMutation({
     mutationFn: async ({ userId, data }: { userId: string; data: any }) => {
       return await adminApi.updateUser(userId, data);
     },
     onSuccess: () => {
       toast.success("✅ تم تحديث المستخدم بنجاح");
-      setUserDialogOpen(false);
       setSelectedUser(null);
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       refetchStats();
@@ -439,19 +481,19 @@ const AdminDashboard = () => {
     },
   });
 
-  const createMechanicMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return await adminApi.registerMechanic(data);
+  const approveRegistrationMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return await adminApi.approveRegistration(userId);
     },
     onSuccess: () => {
-      toast.success("✅ تم إضافة الميكانيكي بنجاح");
-      setMechanicDialogOpen(false);
-      setSelectedMechanic(null);
-      queryClient.invalidateQueries({ queryKey: ["admin-mechanics"] });
+      toast.success("✅ تم تفعيل الحساب بنجاح");
+      queryClient.invalidateQueries({ queryKey: ["admin-pending-registrations"] });
       refetchStats();
+      refetchMechanics();
+      refetchShops();
     },
     onError: () => {
-      toast.error("❌ فشل في إضافة الميكانيكي");
+      toast.error("❌ فشل في تفعيل الحساب");
     },
   });
 
@@ -467,29 +509,12 @@ const AdminDashboard = () => {
     },
     onSuccess: () => {
       toast.success("✅ تم تحديث الميكانيكي بنجاح");
-      setMechanicDialogOpen(false);
       setSelectedMechanic(null);
       queryClient.invalidateQueries({ queryKey: ["admin-mechanics"] });
       refetchStats();
     },
     onError: () => {
       toast.error("❌ فشل في تحديث الميكانيكي");
-    },
-  });
-
-  const createShopMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return await adminApi.registerWorkshop(data);
-    },
-    onSuccess: () => {
-      toast.success("✅ تم إضافة مركز الخدمة بنجاح");
-      setShopDialogOpen(false);
-      setSelectedShop(null);
-      queryClient.invalidateQueries({ queryKey: ["admin-shops"] });
-      refetchStats();
-    },
-    onError: () => {
-      toast.error("❌ فشل في إضافة مركز الخدمة");
     },
   });
 
@@ -509,21 +534,6 @@ const AdminDashboard = () => {
     },
   });
 
-  const createProductMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return await api.post("/products", data);
-    },
-    onSuccess: () => {
-      toast.success("✅ تم إضافة المنتج بنجاح");
-      setProductDialogOpen(false);
-      setSelectedProduct(null);
-      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-    },
-    onError: () => {
-      toast.error("❌ فشل في إضافة المنتج");
-    },
-  });
-
   const updateProductMutation = useMutation({
     mutationFn: async ({
       productId,
@@ -536,7 +546,6 @@ const AdminDashboard = () => {
     },
     onSuccess: () => {
       toast.success("✅ تم تحديث المنتج بنجاح");
-      setProductDialogOpen(false);
       setSelectedProduct(null);
       queryClient.invalidateQueries({ queryKey: ["admin-products"] });
     },
@@ -557,6 +566,8 @@ const AdminDashboard = () => {
         refetchShops(),
         refetchProducts(),
         refetchNotifications(),
+        refetchPending(),
+        refetchActivities(),
       ]);
       toast.success("🔄 تم تحديث جميع البيانات بنجاح");
     } catch (error) {
@@ -584,69 +595,7 @@ const AdminDashboard = () => {
     });
   };
 
-  // Dialog management functions
-  const handleSaveUser = (data: any) => {
-    if (selectedUser) {
-      updateUserMutation.mutate({ userId: selectedUser._id, data });
-    } else {
-      createUserMutation.mutate(data);
-    }
-  };
-
-  const handleSaveMechanic = (data: any) => {
-    if (selectedMechanic) {
-      updateMechanicMutation.mutate({ mechanicId: selectedMechanic._id, data });
-    } else {
-      createMechanicMutation.mutate(data);
-    }
-  };
-
-  const handleSaveShop = (data: any) => {
-    if (selectedShop) {
-      updateShopMutation.mutate({ shopId: selectedShop._id, data });
-    } else {
-      createShopMutation.mutate(data);
-    }
-  };
-
-  const handleSaveProduct = (data: any) => {
-    if (selectedProduct) {
-      updateProductMutation.mutate({ productId: selectedProduct._id, data });
-    } else {
-      createProductMutation.mutate(data);
-    }
-  };
-
-  const openUserDialog = (user?: any) => {
-    setSelectedUser(user);
-    setUserDialogOpen(true);
-  };
-
-  const openMechanicDialog = (mechanic?: any) => {
-    setSelectedMechanic(mechanic);
-    setMechanicDialogOpen(true);
-  };
-
-  const openShopDialog = (shop?: any) => {
-    setSelectedShop(shop);
-    setShopDialogOpen(true);
-  };
-
-  const openProductDialog = (product?: any) => {
-    setSelectedProduct(product);
-    setProductDialogOpen(true);
-  };
-
-  const closeAllDialogs = () => {
-    setUserDialogOpen(false);
-    setMechanicDialogOpen(false);
-    setShopDialogOpen(false);
-    setProductDialogOpen(false);
-    setSelectedUser(null);
-    setSelectedMechanic(null);
-    setSelectedShop(null);
-    setSelectedProduct(null);
-  };
+  // Dialog management functions removed as Add/Edit functionality is removed
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
@@ -748,25 +697,6 @@ const AdminDashboard = () => {
   const typedOrdersData = ordersData as any;
   const typedReviewsData = reviewsData as any;
 
-  const salesChartData = {
-    labels: typedAnalytics?.sales?.map((item: any) => item._id) || [],
-    datasets: [
-      {
-        label: "الإيرادات (ج.م)",
-        data: typedAnalytics?.sales?.map((item: any) => item.revenue) || [],
-        borderColor: "rgb(59, 130, 246)",
-        backgroundColor: "rgba(59, 130, 246, 0.1)",
-        tension: 0.4,
-        fill: true,
-        borderWidth: 3,
-        pointRadius: 6,
-        pointHoverRadius: 8,
-        pointBackgroundColor: "rgb(59, 130, 246)",
-        pointBorderColor: "#fff",
-        pointBorderWidth: 2,
-      },
-    ],
-  };
 
   const bookingsChartData = {
     labels: typedAnalytics?.bookings?.map((item: any) => item._id) || [],
@@ -835,6 +765,20 @@ const AdminDashboard = () => {
           typedAnalytics?.userGrowth?.map((item: any) => item.workshops) || [],
         borderColor: "rgb(249, 115, 22)",
         backgroundColor: "rgba(249, 115, 22, 0.1)",
+        tension: 0.4,
+        fill: true,
+      },
+    ],
+  };
+
+  const salesChartData = {
+    labels: typedAnalytics?.sales?.map((item: any) => item._id) || [],
+    datasets: [
+      {
+        label: "المبيعات اليومية",
+        data: typedAnalytics?.sales?.map((item: any) => item.revenue) || [],
+        borderColor: "rgb(234, 88, 12)",
+        backgroundColor: "rgba(234, 88, 12, 0.1)",
         tension: 0.4,
         fill: true,
       },
@@ -929,6 +873,13 @@ const AdminDashboard = () => {
       icon: ShoppingCart,
       color: "from-indigo-500 to-indigo-600",
       description: "تتبع وإدارة الطلبات",
+    },
+    {
+      id: "pending-approvals",
+      label: "طلبات الانضمام",
+      icon: UserPlus,
+      color: "from-amber-500 to-yellow-600",
+      description: "الموافقة على الميكانيكيين والمراكز",
     },
     {
       id: "analytics",
@@ -1045,10 +996,46 @@ const AdminDashboard = () => {
                               )}
                             </div>
                           )}
+                          {item.id === "pending-approvals" && pendingRegistrations?.users?.length > 0 && (
+                            <Badge variant="destructive" className="mr-auto">
+                              {pendingRegistrations.users.length}
+                            </Badge>
+                          )}
                         </Button>
                       </motion.div>
                     );
                   })}
+                  {/* Logout Button */}
+                  <Separator className="my-4" />
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: navigationItems.length * 0.1 }}
+                  >
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start text-right h-12 transition-all duration-300 group hover:bg-red-100 dark:hover:bg-red-900/30 hover:scale-105 text-red-600 dark:text-red-400"
+                      onClick={() => {
+                        logout();
+                        navigate('/');
+                      }}
+                      title={sidebarCollapsed ? "تسجيل الخروج" : undefined}
+                    >
+                      <LogOut
+                        className="h-5 w-5 transition-transform duration-300 group-hover:scale-110"
+                      />
+                      {!sidebarCollapsed && (
+                        <div className="flex flex-col items-start mr-3">
+                          <span className="text-sm font-medium">
+                            تسجيل الخروج
+                          </span>
+                          <span className="text-xs opacity-70">
+                            الخروج من لوحة التحكم
+                          </span>
+                        </div>
+                      )}
+                    </Button>
+                  </motion.div>
                 </nav>
               </CardContent>
             </Card>
@@ -1070,169 +1057,121 @@ const AdminDashboard = () => {
                   <div className="space-y-8">
                     {/* Enhanced Stats Cards */}
                     {stats && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
+                        {/* Improved KPI Cards - Vibrant Version */}
                         <motion.div variants={fadeInUp}>
-                          <motion.div
-                            whileHover={{ scale: 1.02, y: -5 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <Card className="relative overflow-hidden bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 shadow-xl group">
-                              <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 to-purple-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                          <motion.div whileHover={{ y: -5, scale: 1.02 }} transition={{ duration: 0.2 }}>
+                            <Card className="relative overflow-hidden bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-0 shadow-2xl rounded-2xl group h-full">
+                              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-white/20 transition-colors" />
                               <CardContent className="p-6 relative z-10">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="text-blue-100 text-sm font-medium">
-                                      إجمالي المستخدمين
-                                    </p>
-                                    <motion.p
-                                      className="text-4xl font-bold"
-                                      initial={{ scale: 0 }}
-                                      animate={{ scale: 1 }}
-                                      transition={{
-                                        delay: 0.3,
-                                        type: "spring",
-                                        stiffness: 260,
-                                        damping: 20,
-                                      }}
-                                    >
-                                      {stats.users.total}
-                                    </motion.p>
+                                <div className="flex items-center justify-between mb-4">
+                                  <div className="p-3 bg-white/20 rounded-xl backdrop-blur-md">
+                                    <Users className="h-6 w-6 text-white" />
                                   </div>
-                                  <div className="p-3 bg-white/20 rounded-xl">
-                                    <Users className="h-8 w-8 text-white" />
+                                  <div className="text-xs font-bold bg-white/20 px-2 py-1 rounded-full backdrop-blur-md">
+                                    %+{((analyticsData?.performance?.monthlyGrowth) || 0).toFixed(1)}
                                   </div>
                                 </div>
-                                <div className="mt-4 text-sm">
-                                  <span className="text-blue-100">
-                                    {stats.users.mechanics} ميكانيكي •{" "}
-                                    {stats.users.workshops} مركز
-                                  </span>
+                                <p className="text-blue-100 text-xs font-medium mb-1">إجمالي المستخدمين</p>
+                                <h3 className="text-3xl font-bold mb-4">{stats.users.total.toLocaleString()}</h3>
+                                <div className="flex justify-between text-[10px] text-blue-100 pt-4 border-t border-white/10">
+                                  <span>{stats.users.mechanics} ميكانيكي</span>
+                                  <span>{stats.users.workshops} مركز</span>
                                 </div>
-                                <div className="absolute bottom-0 right-0 w-20 h-20 bg-gradient-to-tl from-white/10 to-transparent rounded-tl-full"></div>
                               </CardContent>
                             </Card>
                           </motion.div>
                         </motion.div>
 
                         <motion.div variants={fadeInUp}>
-                          <motion.div
-                            whileHover={{ scale: 1.02, y: -5 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <Card className="relative overflow-hidden bg-gradient-to-br from-green-500 to-green-600 text-white border-0 shadow-xl group">
-                              <div className="absolute inset-0 bg-gradient-to-br from-green-600/20 to-emerald-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                          <motion.div whileHover={{ y: -5, scale: 1.02 }} transition={{ duration: 0.2 }}>
+                            <Card className="relative overflow-hidden bg-gradient-to-br from-emerald-500 to-green-600 text-white border-0 shadow-2xl rounded-2xl group h-full">
+                              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-white/20 transition-colors" />
                               <CardContent className="p-6 relative z-10">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="text-green-100 text-sm font-medium">
-                                      الطلبات
-                                    </p>
-                                    <motion.p
-                                      className="text-4xl font-bold"
-                                      initial={{ scale: 0 }}
-                                      animate={{ scale: 1 }}
-                                      transition={{
-                                        delay: 0.5,
-                                        type: "spring",
-                                        stiffness: 260,
-                                        damping: 20,
-                                      }}
-                                    >
-                                      {stats.orders.total}
-                                    </motion.p>
+                                <div className="flex items-center justify-between mb-4">
+                                  <div className="p-3 bg-white/20 rounded-xl backdrop-blur-md">
+                                    <ShoppingCart className="h-6 w-6 text-white" />
                                   </div>
-                                  <div className="p-3 bg-white/20 rounded-xl">
-                                    <ShoppingCart className="h-8 w-8 text-white" />
+                                  <div className="text-xs font-bold bg-white/20 px-2 py-1 rounded-full backdrop-blur-md">
+                                    نشط
                                   </div>
                                 </div>
-                                <div className="mt-4 text-sm">
-                                  <span className="text-green-100">
-                                    إجمالي الطلبات المسجلة
-                                  </span>
+                                <p className="text-emerald-100 text-xs font-medium mb-1">مبيعات المنتجات</p>
+                                <h3 className="text-3xl font-bold mb-4">{stats.orders.total.toLocaleString()}</h3>
+                                <div className="flex justify-between text-[10px] text-emerald-100 pt-4 border-t border-white/10">
+                                  <span>{stats.orders.pending} بانتظار الشحن</span>
+                                  <span>{stats.orders.completed} تم شحنه</span>
                                 </div>
-                                <div className="absolute bottom-0 right-0 w-20 h-20 bg-gradient-to-tl from-white/10 to-transparent rounded-tl-full"></div>
                               </CardContent>
                             </Card>
                           </motion.div>
                         </motion.div>
 
                         <motion.div variants={fadeInUp}>
-                          <motion.div
-                            whileHover={{ scale: 1.02, y: -5 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <Card className="relative overflow-hidden bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0 shadow-xl group">
-                              <div className="absolute inset-0 bg-gradient-to-br from-purple-600/20 to-pink-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                          <motion.div whileHover={{ y: -5, scale: 1.02 }} transition={{ duration: 0.2 }}>
+                            <Card className="relative overflow-hidden bg-gradient-to-br from-purple-500 to-pink-600 text-white border-0 shadow-2xl rounded-2xl group h-full">
+                              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-white/20 transition-colors" />
                               <CardContent className="p-6 relative z-10">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="text-purple-100 text-sm font-medium">
-                                      المواعيد
-                                    </p>
-                                    <motion.p
-                                      className="text-4xl font-bold"
-                                      initial={{ scale: 0 }}
-                                      animate={{ scale: 1 }}
-                                      transition={{
-                                        delay: 0.7,
-                                        type: "spring",
-                                        stiffness: 260,
-                                        damping: 20,
-                                      }}
-                                    >
-                                      {stats.bookings.total}
-                                    </motion.p>
+                                <div className="flex items-center justify-between mb-4">
+                                  <div className="p-3 bg-white/20 rounded-xl backdrop-blur-md">
+                                    <Calendar className="h-6 w-6 text-white" />
                                   </div>
-                                  <div className="p-3 bg-white/20 rounded-xl">
-                                    <Calendar className="h-8 w-8 text-white" />
+                                  <div className="text-xs font-bold bg-white/20 px-2 py-1 rounded-full backdrop-blur-md">
+                                    {analyticsData?.performance?.successRate}% نجاح
                                   </div>
                                 </div>
-                                <div className="mt-4 text-sm">
-                                  <span className="text-purple-100">
-                                    إجمالي المواعيد المحجوزة
-                                  </span>
+                                <p className="text-purple-100 text-xs font-medium mb-1">المواعيد</p>
+                                <h3 className="text-3xl font-bold mb-4">{stats.bookings.total.toLocaleString()}</h3>
+                                <div className="flex justify-between text-[10px] text-purple-100 pt-4 border-t border-white/10">
+                                  <span>{stats.bookings.new || 0} مواعيد جديدة</span>
+                                  <span>{stats.bookings.completed} اكتملت</span>
                                 </div>
-                                <div className="absolute bottom-0 right-0 w-20 h-20 bg-gradient-to-tl from-white/10 to-transparent rounded-tl-full"></div>
                               </CardContent>
                             </Card>
                           </motion.div>
                         </motion.div>
 
                         <motion.div variants={fadeInUp}>
-                          <motion.div
-                            whileHover={{ scale: 1.02, y: -5 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <Card className="relative overflow-hidden bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0 shadow-xl group">
-                              <div className="absolute inset-0 bg-gradient-to-br from-orange-600/20 to-red-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                          <motion.div whileHover={{ y: -5, scale: 1.02 }} transition={{ duration: 0.2 }}>
+                            <Card className="relative overflow-hidden bg-gradient-to-br from-orange-500 to-red-600 text-white border-0 shadow-2xl rounded-2xl group h-full">
+                              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-white/20 transition-colors" />
                               <CardContent className="p-6 relative z-10">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="text-orange-100 text-sm font-medium">
-                                      الإيرادات الشهرية
-                                    </p>
-                                    <motion.p
-                                      className="text-4xl font-bold"
-                                      initial={{ scale: 0 }}
-                                      animate={{ scale: 1 }}
-                                      transition={{
-                                        delay: 0.9,
-                                        type: "spring",
-                                        stiffness: 260,
-                                        damping: 20,
-                                      }}
-                                    >
-                                      {stats.revenue.total.toLocaleString()}
-                                    </motion.p>
+                                <div className="flex items-center justify-between mb-4">
+                                  <div className="p-3 bg-white/20 rounded-xl backdrop-blur-md">
+                                    <DollarSign className="h-6 w-6 text-white" />
                                   </div>
-                                  <div className="p-3 bg-white/20 rounded-xl">
-                                    <DollarSign className="h-8 w-8 text-white" />
+                                  <div className="text-xs font-bold bg-white/20 px-2 py-1 rounded-full backdrop-blur-md">
+                                    ج.م
                                   </div>
                                 </div>
-                                <div className="mt-4 text-sm">
-                                  <span className="text-orange-100">ج.م</span>
+                                <p className="text-orange-100 text-xs font-medium mb-1">الأرباح الكلية</p>
+                                <h3 className="text-3xl font-bold mb-4">{stats.revenue.total.toLocaleString()}</h3>
+                                <div className="flex justify-between text-[10px] text-orange-100 pt-4 border-t border-white/10">
+                                  <span>إجمالي الحركات المالية</span>
                                 </div>
-                                <div className="absolute bottom-0 right-0 w-20 h-20 bg-gradient-to-tl from-white/10 to-transparent rounded-tl-full"></div>
+                              </CardContent>
+                            </Card>
+                          </motion.div>
+                        </motion.div>
+
+                        <motion.div variants={fadeInUp}>
+                          <motion.div whileHover={{ y: -5, scale: 1.02 }} transition={{ duration: 0.2 }}>
+                            <Card className="relative overflow-hidden bg-gradient-to-br from-indigo-500 to-cyan-600 text-white border-0 shadow-2xl rounded-2xl group h-full">
+                              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-white/20 transition-colors" />
+                              <CardContent className="p-6 relative z-10">
+                                <div className="flex items-center justify-between mb-4">
+                                  <div className="p-3 bg-white/20 rounded-xl backdrop-blur-md">
+                                    <Activity className="h-6 w-6 text-white" />
+                                  </div>
+                                  <div className="text-xs font-bold bg-white/20 px-2 py-1 rounded-full backdrop-blur-md">
+                                    20% عمولة
+                                  </div>
+                                </div>
+                                <p className="text-indigo-100 text-xs font-medium mb-1">أرباح المنصة</p>
+                                <h3 className="text-3xl font-bold mb-4">{Number(stats.revenue.platformProfits.toFixed(2)).toLocaleString()}</h3>
+                                <div className="flex justify-between text-[10px] text-indigo-100 pt-4 border-t border-white/10">
+                                  <span>صافي عمولة النظام</span>
+                                </div>
                               </CardContent>
                             </Card>
                           </motion.div>
@@ -1240,102 +1179,10 @@ const AdminDashboard = () => {
                       </div>
                     )}
 
-                    {/* Enhanced Quick Actions */}
-                    <motion.div variants={fadeInUp}>
-                      <Card className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 shadow-xl">
-                        <CardHeader>
-                          <CardTitle className="flex items-center gap-2">
-                            <Zap className="h-5 w-5" />
-                            إجراءات سريعة
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            {[
-                              {
-                                icon: Users,
-                                label: "إدارة المستخدمين",
-                                action: () => setActiveTab("users"),
-                                color: "from-blue-500 to-blue-600",
-                                stats: `${stats?.users?.total || 0} مستخدم`,
-                              },
-                              {
-                                icon: ShoppingCart,
-                                label: "إدارة الطلبات",
-                                action: () => setActiveTab("orders"),
-                                color: "from-green-500 to-green-600",
-                                stats: `${stats?.orders?.total || 0} طلب`,
-                              },
-                              {
-                                icon: Star,
-                                label: "إدارة التقييمات",
-                                action: () => setActiveTab("reviews"),
-                                color: "from-yellow-500 to-yellow-600",
-                                stats: `${(reviewsData as any)?.reviews?.length || 0
-                                  } تقييم`,
-                              },
-                              {
-                                icon: BarChart3,
-                                label: "التحليلات المتقدمة",
-                                action: () => setActiveTab("analytics"),
-                                color: "from-purple-500 to-purple-600",
-                                stats: "عرض مفصل",
-                              },
-                            ].map((item, index) => {
-                              const Icon = item.icon;
-                              return (
-                                <motion.div
-                                  key={item.label}
-                                  whileHover={{ scale: 1.05, rotateY: 5 }}
-                                  whileTap={{ scale: 0.95 }}
-                                  initial={{ opacity: 0, y: 20 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  transition={{ delay: index * 0.1 }}
-                                >
-                                  <Button
-                                    variant="outline"
-                                    className={`h-32 flex flex-col gap-3 bg-gradient-to-br ${item.color} text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 relative overflow-hidden group`}
-                                    onClick={item.action}
-                                  >
-                                    <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                                    <Icon className="h-6 w-6 relative z-10" />
-                                    <span className="text-sm font-medium relative z-10">
-                                      {item.label}
-                                    </span>
-                                    <span className="text-xs opacity-80 relative z-10">
-                                      {item.stats}
-                                    </span>
-                                    <div className="absolute top-0 right-0 w-12 h-12 bg-gradient-to-bl from-white/20 to-transparent rounded-bl-full"></div>
-                                  </Button>
-                                </motion.div>
-                              );
-                            })}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
 
                     {/* Enhanced Charts Section */}
                     {analyticsData && (
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <motion.div variants={fadeInUp}>
-                          <Card className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 shadow-xl">
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <TrendingUp className="h-5 w-5" />
-                                اتجاهات الإيرادات
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="h-80">
-                                <Line
-                                  data={salesChartData}
-                                  options={chartOptions}
-                                />
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </motion.div>
 
                         <motion.div variants={fadeInUp}>
                           <Card className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 shadow-xl">
@@ -1344,6 +1191,7 @@ const AdminDashboard = () => {
                                 <Calendar className="h-5 w-5" />
                                 إحصائيات المواعيد
                               </CardTitle>
+                              <CardDescription>يوضح الرسم البياني المواعيد المحجوزة والمكتملة خلال الفترة الحالية.</CardDescription>
                             </CardHeader>
                             <CardContent>
                               <div className="h-80">
@@ -1363,6 +1211,7 @@ const AdminDashboard = () => {
                                 <Star className="h-5 w-5" />
                                 توزيع التقييمات
                               </CardTitle>
+                              <CardDescription>تحليل تقييمات العملاء لجودة الخدمات المقدمة من الميكانيكيين.</CardDescription>
                             </CardHeader>
                             <CardContent>
                               <div className="h-80">
@@ -1382,6 +1231,7 @@ const AdminDashboard = () => {
                                 <Users className="h-5 w-5" />
                                 نمو المستخدمين
                               </CardTitle>
+                              <CardDescription>معدل انضمام العملاء ومزودي الخدمة الجدد إلى المنصة.</CardDescription>
                             </CardHeader>
                             <CardContent>
                               <div className="h-80">
@@ -1408,44 +1258,35 @@ const AdminDashboard = () => {
                         <CardContent>
                           <ScrollArea className="h-64">
                             <div className="space-y-4">
-                              {[
-                                {
-                                  action: "مستخدم جديد",
-                                  user: "أحمد محمد",
-                                  time: "منذ 5 دقائق",
-                                  icon: UserCheck,
-                                  color: "text-green-600",
-                                },
-                                {
-                                  action: "طلب جديد",
-                                  user: "طلب #1234",
-                                  time: "منذ 10 دقائق",
-                                  icon: ShoppingCart,
-                                  color: "text-blue-600",
-                                },
-                                {
-                                  action: "تقييم جديد",
-                                  user: "محمد علي",
-                                  time: "منذ 15 دقيقة",
-                                  icon: Star,
-                                  color: "text-yellow-600",
-                                },
-                                {
-                                  action: "موعد محجوز",
-                                  user: "سارة أحمد",
-                                  time: "منذ 20 دقيقة",
-                                  icon: Calendar,
-                                  color: "text-purple-600",
-                                },
-                                {
-                                  action: "منتج جديد",
-                                  user: "متجر السيارات",
-                                  time: "منذ 30 دقيقة",
-                                  icon: Package,
-                                  color: "text-orange-600",
-                                },
-                              ].map((activity, index) => {
-                                const Icon = activity.icon;
+                              {activitiesData?.activities?.map((activity, index) => {
+                                const Icon = activity.type === 'user' ? UserCheck :
+                                  activity.type === 'order' ? ShoppingCart :
+                                    activity.type === 'booking' ? Calendar :
+                                      activity.type === 'review' ? Star :
+                                        activity.type === 'product' ? Package : Activity;
+
+                                const colorClass = activity.type === 'user' ? "text-green-600" :
+                                  activity.type === 'order' ? "text-blue-600" :
+                                    activity.type === 'booking' ? "text-purple-600" :
+                                      activity.type === 'review' ? "text-yellow-600" :
+                                        activity.type === 'product' ? "text-orange-600" : "text-slate-600";
+
+                                // Function to format relative time
+                                const formatRelativeTime = (dateString: string) => {
+                                  const date = new Date(dateString);
+                                  const now = new Date();
+                                  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+                                  if (diffInSeconds < 60) return "الآن";
+                                  const diffInMinutes = Math.floor(diffInSeconds / 60);
+                                  if (diffInMinutes < 60) return `منذ ${diffInMinutes} دقيقة`;
+                                  const diffInHours = Math.floor(diffInMinutes / 60);
+                                  if (diffInHours < 24) return `منذ ${diffInHours} ساعة`;
+                                  const diffInDays = Math.floor(diffInHours / 24);
+                                  if (diffInDays < 30) return `منذ ${diffInDays} يوم`;
+                                  return date.toLocaleDateString("ar-EG");
+                                };
+
                                 return (
                                   <motion.div
                                     key={index}
@@ -1455,7 +1296,7 @@ const AdminDashboard = () => {
                                     className="flex items-center gap-4 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
                                   >
                                     <div
-                                      className={`p-2 rounded-full bg-slate-100 dark:bg-slate-600 ${activity.color}`}
+                                      className={`p-2 rounded-full bg-slate-100 dark:bg-slate-600 ${colorClass}`}
                                     >
                                       <Icon className="h-4 w-4" />
                                     </div>
@@ -1464,15 +1305,25 @@ const AdminDashboard = () => {
                                         {activity.action}
                                       </p>
                                       <p className="text-xs text-slate-600 dark:text-slate-400">
-                                        {activity.user}
+                                        {activity.user} • {activity.detail}
                                       </p>
                                     </div>
                                     <span className="text-xs text-slate-500">
-                                      {activity.time}
+                                      {formatRelativeTime(activity.createdAt)}
                                     </span>
                                   </motion.div>
                                 );
                               })}
+                              {(!activitiesData?.activities || activitiesData.activities.length === 0) && !activitiesLoading && (
+                                <div className="text-center py-8 text-muted-foreground">
+                                  لا توجد أنشطة مؤخراً
+                                </div>
+                              )}
+                              {activitiesLoading && (
+                                <div className="flex justify-center py-8">
+                                  <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                                </div>
+                              )}
                             </div>
                           </ScrollArea>
                         </CardContent>
@@ -1512,7 +1363,8 @@ const AdminDashboard = () => {
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <Card>
                                   <CardHeader>
-                                    <CardTitle>اتجاهات النمو الشهري</CardTitle>
+                                    <CardTitle>اتجاهات نمو المستخدمين</CardTitle>
+                                    <CardDescription>يوضح هذا الرسم البياني عدد العملاء والميكانيكيين ومراكز الخدمة الجدد الذين انضموا للنظام يومياً.</CardDescription>
                                   </CardHeader>
                                   <CardContent>
                                     <div className="h-80">
@@ -1525,9 +1377,8 @@ const AdminDashboard = () => {
                                 </Card>
                                 <Card>
                                   <CardHeader>
-                                    <CardTitle>
-                                      توزيع العملاء حسب المنطقة
-                                    </CardTitle>
+                                    <CardTitle>توزيع التقييمات العامة</CardTitle>
+                                    <CardDescription>تحليل لتقييمات العملاء للخدمات المقدمة (من نجمة واحدة إلى 5 نجوم).</CardDescription>
                                   </CardHeader>
                                   <CardContent>
                                     <div className="h-80">
@@ -1544,14 +1395,13 @@ const AdminDashboard = () => {
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <Card>
                                   <CardHeader>
-                                    <CardTitle>
-                                      إحصائيات المستخدمين الجديدة
-                                    </CardTitle>
+                                    <CardTitle>نمو عدد المستخدمين</CardTitle>
+                                    <CardDescription>مقارنة بين انضمام العملاء الجدد ومزودي الخدمة خلال الفترة المحددة.</CardDescription>
                                   </CardHeader>
                                   <CardContent>
                                     <div className="h-80">
                                       <Line
-                                        data={salesChartData}
+                                        data={userGrowthChartData}
                                         options={chartOptions}
                                       />
                                     </div>
@@ -1559,7 +1409,8 @@ const AdminDashboard = () => {
                                 </Card>
                                 <Card>
                                   <CardHeader>
-                                    <CardTitle>توزيع الأدوار</CardTitle>
+                                    <CardTitle>توزيع أدوار المستخدمين</CardTitle>
+                                    <CardDescription>نسبة كل فئة من المستخدمين (عميل، ميكانيكي، مركز خدمة) في النظام.</CardDescription>
                                   </CardHeader>
                                   <CardContent>
                                     <div className="h-80">
@@ -1575,14 +1426,13 @@ const AdminDashboard = () => {
                             <TabsContent value="revenue" className="space-y-6">
                               <Card>
                                 <CardHeader>
-                                  <CardTitle>
-                                    تحليل الإيرادات التفصيلي
-                                  </CardTitle>
+                                  <CardTitle>اتجاهات المبيعات اليومية</CardTitle>
+                                  <CardDescription>يوضح هذا الرسم حجم المبيعات اليومية خلال الفترة المختارة، مما يساعد في تتبع الأداء المالي.</CardDescription>
                                 </CardHeader>
                                 <CardContent>
                                   <div className="h-96">
-                                    <Bar
-                                      data={bookingsChartData}
+                                    <Line
+                                      data={salesChartData}
                                       options={chartOptions}
                                     />
                                   </div>
@@ -1593,62 +1443,66 @@ const AdminDashboard = () => {
                               value="performance"
                               className="space-y-6"
                             >
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <Card>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <Card className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl border-white/20 dark:border-slate-800/50 shadow-xl rounded-2xl overflow-hidden group">
                                   <CardContent className="p-6">
-                                    <div className="flex items-center">
-                                      <Target className="h-8 w-8 text-blue-600" />
-                                      <div className="mr-4">
-                                        <p className="text-sm font-medium text-muted-foreground">
-                                          معدل النجاح
-                                        </p>
-                                        <p className="text-2xl font-bold">
-                                          94.5%
+                                    <div className="flex items-center justify-between">
+                                      <div className="p-2 bg-blue-500/10 rounded-xl">
+                                        <Target className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                                      </div>
+                                      <div className="text-right">
+                                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">معدل النجاح</p>
+                                        <p className="text-xl font-bold text-slate-900 dark:text-white">{analyticsData?.performance?.successRate || 0}%</p>
+                                      </div>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+
+                                <Card className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl border-white/20 dark:border-slate-800/50 shadow-xl rounded-2xl overflow-hidden group">
+                                  <CardContent className="p-6">
+                                    <div className="flex items-center justify-between">
+                                      <div className="p-2 bg-green-500/10 rounded-xl">
+                                        <Clock className="h-6 w-6 text-green-600 dark:text-green-400" />
+                                      </div>
+                                      <div className="text-right">
+                                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">وقت الاستجابة</p>
+                                        <p className="text-xl font-bold text-slate-900 dark:text-white">
+                                          {analyticsData?.performance?.avgResponseTime || 0} د
                                         </p>
                                       </div>
                                     </div>
                                   </CardContent>
                                 </Card>
-                                <Card>
+
+                                <Card className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl border-white/20 dark:border-slate-800/50 shadow-xl rounded-2xl overflow-hidden group">
                                   <CardContent className="p-6">
-                                    <div className="flex items-center">
-                                      <Clock className="h-8 w-8 text-green-600" />
-                                      <div className="mr-4">
-                                        <p className="text-sm font-medium text-muted-foreground">
-                                          متوسط وقت الاستجابة
-                                        </p>
-                                        <p className="text-2xl font-bold">
-                                          2.3 دقيقة
-                                        </p>
+                                    <div className="flex items-center justify-between">
+                                      <div className="p-2 bg-yellow-500/10 rounded-xl">
+                                        <Star className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
+                                      </div>
+                                      <div className="text-right">
+                                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">التقييم العام</p>
+                                        <p className="text-xl font-bold text-slate-900 dark:text-white">{analyticsData?.performance?.avgRating || 0}/5</p>
                                       </div>
                                     </div>
                                   </CardContent>
                                 </Card>
-                                <Card>
+
+                                <Card className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl border-white/20 dark:border-slate-800/50 shadow-xl rounded-2xl overflow-hidden group">
                                   <CardContent className="p-6">
-                                    <div className="flex items-center">
-                                      <Star className="h-8 w-8 text-yellow-600" />
-                                      <div className="mr-4">
-                                        <p className="text-sm font-medium text-muted-foreground">
-                                          تقييم العملاء
-                                        </p>
-                                        <p className="text-2xl font-bold">
-                                          4.8/5
-                                        </p>
+                                    <div className="flex items-center justify-between">
+                                      <div className="p-2 bg-purple-500/10 rounded-xl">
+                                        {analyticsData?.performance?.monthlyGrowth >= 0 ? (
+                                          <TrendingUp className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                                        ) : (
+                                          <TrendingDown className="h-6 w-6 text-red-600 dark:text-red-400" />
+                                        )}
                                       </div>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                                <Card>
-                                  <CardContent className="p-6">
-                                    <div className="flex items-center">
-                                      <TrendingUp className="h-8 w-8 text-purple-600" />
-                                      <div className="mr-4">
-                                        <p className="text-sm font-medium text-muted-foreground">
-                                          نمو شهري
-                                        </p>
-                                        <p className="text-2xl font-bold">
-                                          +15.2%
+                                      <div className="text-right">
+                                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">النمو الشهري</p>
+                                        <p className={`text-xl font-bold ${analyticsData?.performance?.monthlyGrowth >= 0 ? 'text-purple-600' : 'text-red-600'}`}>
+                                          {analyticsData?.performance?.monthlyGrowth >= 0 ? "+" : ""}
+                                          {(analyticsData?.performance?.monthlyGrowth || 0).toFixed(1)}%
                                         </p>
                                       </div>
                                     </div>
@@ -1708,10 +1562,6 @@ const AdminDashboard = () => {
                                 </SelectItem>
                               </SelectContent>
                             </Select>
-                            <Button onClick={() => openUserDialog()}>
-                              <Plus className="h-4 w-4 ml-2" />
-                              إضافة مستخدم
-                            </Button>
                           </div>
 
                           <div className="rounded-md border">
@@ -1759,15 +1609,6 @@ const AdminDashboard = () => {
                                       </TableCell>
                                       <TableCell>
                                         <div className="flex items-center gap-2">
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() =>
-                                              openMechanicDialog(mechanic)
-                                            }
-                                          >
-                                            <Edit className="h-4 w-4" />
-                                          </Button>
                                           <AlertDialog>
                                             <AlertDialogTrigger asChild>
                                               <Button
@@ -1812,6 +1653,43 @@ const AdminDashboard = () => {
                               </TableBody>
                             </Table>
                           </div>
+
+                          {/* Pagination for Users */}
+                          {usersData?.pages > 1 && (
+                            <div className="mt-4 border-t pt-4">
+                              <div className="flex justify-between items-center mb-4 text-xs text-muted-foreground bg-slate-50 dark:bg-slate-900/50 p-2 rounded">
+                                <span>الصفحة {usersPage} من {usersData.pages}</span>
+                                <span>إجمالي المستخدمين: {usersData.total}</span>
+                              </div>
+                              <Pagination>
+                                <PaginationContent>
+                                  <PaginationItem>
+                                    <PaginationPrevious
+                                      className="cursor-pointer"
+                                      onClick={() => setUsersPage(p => Math.max(1, p - 1))}
+                                    />
+                                  </PaginationItem>
+                                  {[...Array(usersData.pages)].map((_, i) => (
+                                    <PaginationItem key={i}>
+                                      <PaginationLink
+                                        className="cursor-pointer"
+                                        isActive={usersPage === i + 1}
+                                        onClick={() => setUsersPage(i + 1)}
+                                      >
+                                        {i + 1}
+                                      </PaginationLink>
+                                    </PaginationItem>
+                                  ))}
+                                  <PaginationItem>
+                                    <PaginationNext
+                                      className="cursor-pointer"
+                                      onClick={() => setUsersPage(p => Math.min(usersData.pages, p + 1))}
+                                    />
+                                  </PaginationItem>
+                                </PaginationContent>
+                              </Pagination>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     </motion.div>
@@ -1843,10 +1721,6 @@ const AdminDashboard = () => {
                                 className="pl-10"
                               />
                             </div>
-                            <Button onClick={() => openMechanicDialog()}>
-                              <Plus className="h-4 w-4 ml-2" />
-                              إضافة ميكانيكي
-                            </Button>
                           </div>
 
                           <div className="rounded-md border">
@@ -1930,15 +1804,6 @@ const AdminDashboard = () => {
                                       </TableCell>
                                       <TableCell>
                                         <div className="flex items-center gap-2">
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() =>
-                                              openMechanicDialog(mechanic)
-                                            }
-                                          >
-                                            <Edit className="h-4 w-4" />
-                                          </Button>
                                           <AlertDialog>
                                             <AlertDialogTrigger asChild>
                                               <Button
@@ -1985,6 +1850,43 @@ const AdminDashboard = () => {
                               </TableBody>
                             </Table>
                           </div>
+
+                          {/* Pagination for Mechanics */}
+                          {mechanicsData?.pages > 1 && (
+                            <div className="mt-4 border-t pt-4">
+                              <div className="flex justify-between items-center mb-4 text-xs text-muted-foreground bg-slate-50 dark:bg-slate-900/50 p-2 rounded">
+                                <span>الصفحة {mechanicsPage} من {mechanicsData.pages}</span>
+                                <span>إجمالي الميكانيكيين: {mechanicsData.total}</span>
+                              </div>
+                              <Pagination>
+                                <PaginationContent>
+                                  <PaginationItem>
+                                    <PaginationPrevious
+                                      className="cursor-pointer"
+                                      onClick={() => setMechanicsPage(p => Math.max(1, p - 1))}
+                                    />
+                                  </PaginationItem>
+                                  {[...Array(mechanicsData.pages)].map((_, i) => (
+                                    <PaginationItem key={i}>
+                                      <PaginationLink
+                                        className="cursor-pointer"
+                                        isActive={mechanicsPage === i + 1}
+                                        onClick={() => setMechanicsPage(i + 1)}
+                                      >
+                                        {i + 1}
+                                      </PaginationLink>
+                                    </PaginationItem>
+                                  ))}
+                                  <PaginationItem>
+                                    <PaginationNext
+                                      className="cursor-pointer"
+                                      onClick={() => setMechanicsPage(p => Math.min(mechanicsData.pages, p + 1))}
+                                    />
+                                  </PaginationItem>
+                                </PaginationContent>
+                              </Pagination>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     </motion.div>
@@ -2016,10 +1918,6 @@ const AdminDashboard = () => {
                                 className="pl-10"
                               />
                             </div>
-                            <Button onClick={() => openShopDialog()}>
-                              <Plus className="h-4 w-4 ml-2" />
-                              إضافة مركز
-                            </Button>
                           </div>
 
                           <div className="rounded-md border">
@@ -2062,7 +1960,7 @@ const AdminDashboard = () => {
                                         <div className="flex items-center gap-1">
                                           <MapPin className="h-4 w-4 text-muted-foreground" />
                                           <span className="text-sm">
-                                            {shop.address || "غير محدد"}
+                                            {shop.workshopAddress || shop.address || shop.location || "غير محدد"}
                                           </span>
                                         </div>
                                       </TableCell>
@@ -2078,15 +1976,6 @@ const AdminDashboard = () => {
                                       </TableCell>
                                       <TableCell>
                                         <div className="flex items-center gap-2">
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() =>
-                                              openMechanicDialog(mechanic)
-                                            }
-                                          >
-                                            <Edit className="h-4 w-4" />
-                                          </Button>
                                           <AlertDialog>
                                             <AlertDialogTrigger asChild>
                                               <Button
@@ -2131,6 +2020,43 @@ const AdminDashboard = () => {
                               </TableBody>
                             </Table>
                           </div>
+
+                          {/* Pagination for Shops */}
+                          {shopsData?.pages > 1 && (
+                            <div className="mt-4 border-t pt-4">
+                              <div className="flex justify-between items-center mb-4 text-xs text-muted-foreground bg-slate-50 dark:bg-slate-900/50 p-2 rounded">
+                                <span>الصفحة {shopsPage} من {shopsData.pages}</span>
+                                <span>إجمالي المراكز: {shopsData.total}</span>
+                              </div>
+                              <Pagination>
+                                <PaginationContent>
+                                  <PaginationItem>
+                                    <PaginationPrevious
+                                      className="cursor-pointer"
+                                      onClick={() => setShopsPage(p => Math.max(1, p - 1))}
+                                    />
+                                  </PaginationItem>
+                                  {[...Array(shopsData.pages)].map((_, i) => (
+                                    <PaginationItem key={i}>
+                                      <PaginationLink
+                                        className="cursor-pointer"
+                                        isActive={shopsPage === i + 1}
+                                        onClick={() => setShopsPage(i + 1)}
+                                      >
+                                        {i + 1}
+                                      </PaginationLink>
+                                    </PaginationItem>
+                                  ))}
+                                  <PaginationItem>
+                                    <PaginationNext
+                                      className="cursor-pointer"
+                                      onClick={() => setShopsPage(p => Math.min(shopsData.pages, p + 1))}
+                                    />
+                                  </PaginationItem>
+                                </PaginationContent>
+                              </Pagination>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     </motion.div>
@@ -2183,10 +2109,6 @@ const AdminDashboard = () => {
                                 <SelectItem value="tires">إطارات</SelectItem>
                               </SelectContent>
                             </Select>
-                            <Button onClick={() => openProductDialog()}>
-                              <Plus className="h-4 w-4 ml-2" />
-                              إضافة منتج
-                            </Button>
                           </div>
 
                           <div className="rounded-md border">
@@ -2244,12 +2166,12 @@ const AdminDashboard = () => {
                                       <TableCell>
                                         <Badge
                                           variant={
-                                            product.quantity > 10
+                                            (product.stock ?? product.quantity ?? 0) > 10
                                               ? "default"
                                               : "destructive"
                                           }
                                         >
-                                          {product.quantity}
+                                          {product.stock ?? product.quantity ?? 0}
                                         </Badge>
                                       </TableCell>
                                       <TableCell>
@@ -2259,15 +2181,6 @@ const AdminDashboard = () => {
                                       </TableCell>
                                       <TableCell>
                                         <div className="flex items-center gap-2">
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() =>
-                                              openMechanicDialog(mechanic)
-                                            }
-                                          >
-                                            <Edit className="h-4 w-4" />
-                                          </Button>
                                           <AlertDialog>
                                             <AlertDialogTrigger asChild>
                                               <Button
@@ -2307,6 +2220,43 @@ const AdminDashboard = () => {
                               </TableBody>
                             </Table>
                           </div>
+
+                          {/* Pagination for Products */}
+                          {productsData?.pages > 1 && (
+                            <div className="mt-4 border-t pt-4">
+                              <div className="flex justify-between items-center mb-4 text-xs text-muted-foreground bg-slate-50 dark:bg-slate-900/50 p-2 rounded">
+                                <span>الصفحة {productsPage} من {productsData.pages}</span>
+                                <span>إجمالي المنتجات: {productsData.total}</span>
+                              </div>
+                              <Pagination>
+                                <PaginationContent>
+                                  <PaginationItem>
+                                    <PaginationPrevious
+                                      className="cursor-pointer"
+                                      onClick={() => setProductsPage(p => Math.max(1, p - 1))}
+                                    />
+                                  </PaginationItem>
+                                  {[...Array(productsData.pages)].map((_, i) => (
+                                    <PaginationItem key={i}>
+                                      <PaginationLink
+                                        className="cursor-pointer"
+                                        isActive={productsPage === i + 1}
+                                        onClick={() => setProductsPage(i + 1)}
+                                      >
+                                        {i + 1}
+                                      </PaginationLink>
+                                    </PaginationItem>
+                                  ))}
+                                  <PaginationItem>
+                                    <PaginationNext
+                                      className="cursor-pointer"
+                                      onClick={() => setProductsPage(p => Math.min(productsData.pages, p + 1))}
+                                    />
+                                  </PaginationItem>
+                                </PaginationContent>
+                              </Pagination>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     </motion.div>
@@ -2356,7 +2306,7 @@ const AdminDashboard = () => {
                                 <SelectItem value="cancelled">ملغي</SelectItem>
                               </SelectContent>
                             </Select>
-                            <Button>
+                            <Button onClick={() => exportOrdersToCSV((ordersData as any)?.orders)}>
                               <Download className="h-4 w-4 ml-2" />
                               تصدير
                             </Button>
@@ -2367,6 +2317,7 @@ const AdminDashboard = () => {
                               <TableHeader>
                                 <TableRow>
                                   <TableHead>رقم الطلب</TableHead>
+                                  <TableHead>المنتج</TableHead>
                                   <TableHead>العميل</TableHead>
                                   <TableHead>المبلغ</TableHead>
                                   <TableHead>الحالة</TableHead>
@@ -2386,21 +2337,32 @@ const AdminDashboard = () => {
                                       <TableCell className="font-medium">
                                         <div>
                                           <p>#{order._id?.slice(-8)}</p>
-                                          <p className="text-sm text-muted-foreground">
-                                            {order.items?.length || 0} منتج
+                                          <p className="text-[10px] text-muted-foreground">
+                                            {order.products?.length || 0} منتج
                                           </p>
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="flex flex-col">
+                                          <span className="text-sm font-medium line-clamp-1">
+                                            {order.products?.[0]?.productId?.name || order.products?.[0]?.name || "منتج غير متوفر"}
+                                          </span>
+                                          {order.products?.length > 1 && (
+                                            <span className="text-[10px] text-muted-foreground">
+                                              +{order.products.length - 1} منتج آخر
+                                            </span>
+                                          )}
                                         </div>
                                       </TableCell>
                                       <TableCell>
                                         <div className="flex items-center gap-3">
                                           <Avatar>
                                             <AvatarFallback>
-                                              {order.customerName?.charAt(0) ||
-                                                "?"}
+                                              {(order.customerInfo?.name || order.userId?.name || "?").charAt(0)}
                                             </AvatarFallback>
                                           </Avatar>
                                           <span>
-                                            {order.customerName || "غير محدد"}
+                                            {order.customerInfo?.name || order.userId?.name || "غير محدد"}
                                           </span>
                                         </div>
                                       </TableCell>
@@ -2408,7 +2370,7 @@ const AdminDashboard = () => {
                                         <div className="flex items-center gap-1">
                                           <DollarSign className="h-4 w-4 text-green-600" />
                                           <span className="font-medium">
-                                            {order.total?.toLocaleString() || 0}
+                                            {order.totalAmount?.toLocaleString() || 0}
                                           </span>
                                         </div>
                                       </TableCell>
@@ -2422,43 +2384,16 @@ const AdminDashboard = () => {
                                       </TableCell>
                                       <TableCell>
                                         <div className="flex items-center gap-2">
-                                          <Button variant="ghost" size="sm">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                              setSelectedOrder(order);
+                                              setOrderDetailsOpen(true);
+                                            }}
+                                          >
                                             <Eye className="h-4 w-4" />
                                           </Button>
-                                          <Button variant="ghost" size="sm">
-                                            <Edit className="h-4 w-4" />
-                                          </Button>
-                                          <AlertDialog>
-                                            <AlertDialogTrigger asChild>
-                                              <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-destructive"
-                                              >
-                                                <Trash2 className="h-4 w-4" />
-                                              </Button>
-                                            </AlertDialogTrigger>
-                                            <AlertDialogContent>
-                                              <AlertDialogHeader>
-                                                <AlertDialogTitle>
-                                                  تأكيد الحذف
-                                                </AlertDialogTitle>
-                                                <AlertDialogDescription>
-                                                  هل أنت متأكد من حذف هذا الطلب؟
-                                                  لا يمكن التراجع عن هذا
-                                                  الإجراء.
-                                                </AlertDialogDescription>
-                                              </AlertDialogHeader>
-                                              <AlertDialogFooter>
-                                                <AlertDialogCancel>
-                                                  إلغاء
-                                                </AlertDialogCancel>
-                                                <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                                                  حذف
-                                                </AlertDialogAction>
-                                              </AlertDialogFooter>
-                                            </AlertDialogContent>
-                                          </AlertDialog>
                                         </div>
                                       </TableCell>
                                     </motion.tr>
@@ -2467,6 +2402,194 @@ const AdminDashboard = () => {
                               </TableBody>
                             </Table>
                           </div>
+
+                          {/* Pagination for Orders */}
+                          {ordersData?.pages > 1 && (
+                            <div className="mt-4 border-t pt-4">
+                              <div className="flex justify-between items-center mb-4 text-xs text-muted-foreground bg-slate-50 dark:bg-slate-900/50 p-2 rounded">
+                                <span>الصفحة {ordersPage} من {ordersData.pages}</span>
+                                <span>إجمالي الطلبات: {ordersData.total}</span>
+                              </div>
+                              <Pagination>
+                                <PaginationContent>
+                                  <PaginationItem>
+                                    <PaginationPrevious
+                                      className="cursor-pointer"
+                                      onClick={() => setOrdersPage(p => Math.max(1, p - 1))}
+                                    />
+                                  </PaginationItem>
+                                  {[...Array(ordersData.pages)].map((_, i) => (
+                                    <PaginationItem key={i}>
+                                      <PaginationLink
+                                        className="cursor-pointer"
+                                        isActive={ordersPage === i + 1}
+                                        onClick={() => setOrdersPage(i + 1)}
+                                      >
+                                        {i + 1}
+                                      </PaginationLink>
+                                    </PaginationItem>
+                                  ))}
+                                  <PaginationItem>
+                                    <PaginationNext
+                                      className="cursor-pointer"
+                                      onClick={() => setOrdersPage(p => Math.min(ordersData.pages, p + 1))}
+                                    />
+                                  </PaginationItem>
+                                </PaginationContent>
+                              </Pagination>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  </div>
+                )}
+
+                {/* Pending Approvals Management Tab */}
+                {activeTab === "pending-approvals" && (
+                  <div className="space-y-8">
+                    <motion.div variants={fadeInUp}>
+                      <Card className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 shadow-xl">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <UserPlus className="h-5 w-5" />
+                            إدارة طلبات الانضمام
+                          </CardTitle>
+                          <CardDescription>
+                            مراجعة وقبول الميكانيكيين ومراكز الصيانة الجديدة
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          {pendingLoading ? (
+                            <div className="flex justify-center p-8">
+                              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : !pendingRegistrations?.users || pendingRegistrations.users.length === 0 ? (
+                            <div className="text-center p-12 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700">
+                              <UserCheck className="h-12 w-12 mx-auto text-slate-300 mb-4" />
+                              <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">
+                                لا توجد طلبات معلقة
+                              </h3>
+                              <p className="text-slate-500 dark:text-slate-400">
+                                تم معالجة جميع طلبات الانضمام السابقة.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="rounded-md border">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>المستخدم</TableHead>
+                                    <TableHead>النوع</TableHead>
+                                    <TableHead>التواصل</TableHead>
+                                    <TableHead>التاريخ</TableHead>
+                                    <TableHead>الإجراءات</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {pendingRegistrations.users.map((user: any) => (
+                                    <motion.tr
+                                      key={user._id}
+                                      initial={{ opacity: 0, y: 10 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      className="hover:bg-muted/50"
+                                    >
+                                      <TableCell className="font-medium">
+                                        <div className="flex items-center gap-3">
+                                          <Avatar>
+                                            <AvatarFallback>
+                                              {user.name?.charAt(0)}
+                                            </AvatarFallback>
+                                          </Avatar>
+                                          <div>
+                                            <p>{user.name}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                              {user.workshopName || (user.role === 'mechanic' ? 'ميكانيكي حر' : '')}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        {getRoleBadge(user.role)}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="text-sm space-y-1">
+                                          <div className="flex items-center gap-1 text-muted-foreground">
+                                            <Mail className="h-3 w-3" />
+                                            {user.email}
+                                          </div>
+                                          {user.phone && (
+                                            <div className="flex items-center gap-1 text-muted-foreground">
+                                              <Phone className="h-3 w-3" />
+                                              {user.phone}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                          <Calendar className="h-3 w-3" />
+                                          {new Date(user.createdAt).toLocaleDateString("ar-EG")}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-2">
+                                          <Button
+                                            size="sm"
+                                            className="bg-green-600 hover:bg-green-700 text-white"
+                                            onClick={() => approveRegistrationMutation.mutate(user._id)}
+                                            disabled={approveRegistrationMutation.isPending}
+                                          >
+                                            {approveRegistrationMutation.isPending ? (
+                                              <RefreshCw className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                              <>
+                                                <CheckCircle className="h-4 w-4 ml-1" />
+                                                قبول
+                                              </>
+                                            )}
+                                          </Button>
+                                          <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                              <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="text-destructive hover:bg-red-50"
+                                              >
+                                                <XCircle className="h-4 w-4 ml-1" />
+                                                رفض
+                                              </Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent>
+                                              <AlertDialogHeader>
+                                                <AlertDialogTitle>
+                                                  رفض طلب الانضمام
+                                                </AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                  هل أنت متأكد من رفض طلب انضمام {user.name}؟ هذا سيؤدي لحذف الحساب نهائياً.
+                                                </AlertDialogDescription>
+                                              </AlertDialogHeader>
+                                              <AlertDialogFooter>
+                                                <AlertDialogCancel>
+                                                  إلغاء
+                                                </AlertDialogCancel>
+                                                <AlertDialogAction
+                                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                                  onClick={() => deleteUserMutation.mutate(user._id)}
+                                                >
+                                                  تأكيد الرفض
+                                                </AlertDialogAction>
+                                              </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                          </AlertDialog>
+                                        </div>
+                                      </TableCell>
+                                    </motion.tr>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     </motion.div>
@@ -2476,45 +2599,134 @@ const AdminDashboard = () => {
             </AnimatePresence>
           </div>
         </div>
+
+        {/* Order Details Dialog */}
+        <Dialog open={orderDetailsOpen} onOpenChange={setOrderDetailsOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-2xl">
+                <ShoppingCart className="h-6 w-6 text-primary" />
+                تفاصيل الطلب #{selectedOrder?._id?.slice(-8)}
+              </DialogTitle>
+              <DialogDescription>
+                عرض معلومات كاملة عن الطلب والمنتجات والعميل
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedOrder && (
+              <ScrollArea className="flex-1 pr-4">
+                <div className="space-y-6 py-4">
+                  {/* Status and Summary */}
+                  <div className="flex flex-col gap-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {getStatusBadge(selectedOrder.status)}
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Calendar className="h-4 w-4" />
+                          {new Date(selectedOrder.createdAt).toLocaleString("ar-EG")}
+                        </div>
+                      </div>
+                      <div className="text-right text-lg font-bold text-primary">
+                        {selectedOrder.totalAmount?.toLocaleString()} ج.م
+                      </div>
+                    </div>
+                    {selectedOrder.products?.length > 0 && (
+                      <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+                        <p className="text-xs text-muted-foreground mb-1">المنتجات:</p>
+                        <p className="font-semibold text-sm">
+                          {selectedOrder.products.map((p: any) => p.productId?.name || p.name).join(" ، ")}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Customer Info */}
+                  <div className="space-y-3">
+                    <h3 className="font-semibold flex items-center gap-2 border-b pb-2">
+                      <Users className="h-4 w-4 text-primary" />
+                      معلومات العميل
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-3 rounded-lg border bg-white/50 dark:bg-slate-800/50">
+                        <Label className="text-xs text-muted-foreground">الاسم</Label>
+                        <p className="font-medium">{selectedOrder.customerInfo?.name || selectedOrder.userId?.name || "غير محدد"}</p>
+                      </div>
+                      <div className="p-3 rounded-lg border bg-white/50 dark:bg-slate-800/50">
+                        <Label className="text-xs text-muted-foreground">رقم الهاتف</Label>
+                        <p className="font-medium">{selectedOrder.customerInfo?.phone || selectedOrder.userId?.phone || "غير محدد"}</p>
+                      </div>
+                      <div className="p-3 rounded-lg border bg-white/50 dark:bg-slate-800/50">
+                        <Label className="text-xs text-muted-foreground">العنوان</Label>
+                        <p className="font-medium text-sm">{selectedOrder.customerInfo?.address || "غير محدد"}</p>
+                      </div>
+                      <div className="p-3 rounded-lg border bg-white/50 dark:bg-slate-800/50">
+                        <Label className="text-xs text-muted-foreground">البريد الإلكتروني</Label>
+                        <p className="font-medium text-sm">{selectedOrder.customerInfo?.email || selectedOrder.userId?.email || "غير محدد"}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Products Summary */}
+                  <div className="space-y-3">
+                    <h3 className="font-semibold flex items-center gap-2 border-b pb-2">
+                      <Package className="h-4 w-4 text-primary" />
+                      المنتجات ({selectedOrder.products?.length || 0})
+                    </h3>
+                    <div className="space-y-2">
+                      {selectedOrder.products?.map((item: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-3 rounded-lg border bg-slate-50/50 dark:bg-slate-900/50">
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-10 w-10 border">
+                              <AvatarImage src={item.productId?.images?.[0]} />
+                              <AvatarFallback>{item.productId?.name?.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-medium text-sm">{item.productId?.name || item.name || "منتج غير متوفر"}</p>
+                              <p className="text-xs text-muted-foreground">ج.م {item.price?.toLocaleString()} × {item.quantity}</p>
+                            </div>
+                          </div>
+                          <div className="text-sm font-semibold">
+                            ج.م {(item.price * item.quantity).toLocaleString()}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Additional Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      <h3 className="font-semibold flex items-center gap-2 border-b pb-2">
+                        <Building2 className="h-4 w-4 text-primary" />
+                        المركز المسئول
+                      </h3>
+                      <div className="p-3 rounded-lg border bg-white/50 dark:bg-slate-800/50">
+                        <p className="font-medium">{selectedOrder.workshopId?.workshopName || "غير محدد"}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <h3 className="font-semibold flex items-center gap-2 border-b pb-2">
+                        <DollarSign className="h-4 w-4 text-primary" />
+                        طريقة الدفع
+                      </h3>
+                      <div className="p-3 rounded-lg border bg-white/50 dark:bg-slate-800/50">
+                        <p className="font-medium">{selectedOrder.paymentMethod === 'cod' ? 'دفع عند الاستلام' : 'دفع إلكتروني'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </ScrollArea>
+            )}
+
+            <div className="flex justify-end gap-3 pt-6 border-t mt-4">
+              <Button variant="outline" onClick={() => setOrderDetailsOpen(false)}>
+                إغلاق
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
-
-      {/* Dialog Components */}
-      <AddEditUserDialog
-        isOpen={userDialogOpen}
-        onClose={() => setUserDialogOpen(false)}
-        onSave={handleSaveUser}
-        user={selectedUser}
-        isLoading={createUserMutation.isPending || updateUserMutation.isPending}
-      />
-
-      <AddEditMechanicDialog
-        isOpen={mechanicDialogOpen}
-        onClose={() => setMechanicDialogOpen(false)}
-        onSave={handleSaveMechanic}
-        mechanic={selectedMechanic}
-        isLoading={
-          createMechanicMutation.isPending || updateMechanicMutation.isPending
-        }
-      />
-
-      <AddEditShopDialog
-        isOpen={shopDialogOpen}
-        onClose={() => setShopDialogOpen(false)}
-        onSave={handleSaveShop}
-        shop={selectedShop}
-        isLoading={createShopMutation.isPending || updateShopMutation.isPending}
-      />
-
-      <AddEditProductDialog
-        isOpen={productDialogOpen}
-        onClose={() => setProductDialogOpen(false)}
-        onSave={handleSaveProduct}
-        product={selectedProduct}
-        isLoading={
-          createProductMutation.isPending || updateProductMutation.isPending
-        }
-      />
-    </div>
+    </div >
   );
 };
 

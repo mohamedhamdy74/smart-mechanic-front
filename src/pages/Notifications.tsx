@@ -7,9 +7,12 @@ import { Bell, Check, X, Clock, CheckCircle, XCircle, AlertCircle } from "lucide
 import { useNotifications } from "@/contexts/WebSocketNotificationContext";
 import { useAuth } from "@/contexts/SimpleAuthContext";
 
+import { useNavigate } from "react-router-dom";
+
 const Notifications = () => {
   const { notifications, unreadCount, markAsRead, markAllAsRead, clearNotifications } = useNotifications();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -55,6 +58,54 @@ const Notifications = () => {
     if (diffInMinutes < 60) return `منذ ${diffInMinutes} دقيقة`;
     if (diffInMinutes < 1440) return `منذ ${Math.floor(diffInMinutes / 60)} ساعة`;
     return `منذ ${Math.floor(diffInMinutes / 1440)} يوم`;
+  };
+
+  const handleNotificationClick = (notification: any) => {
+    // Mark as read first
+    if (!notification.read) {
+      markAsRead(notification.id);
+    }
+
+    // Smart Navigation Logic
+    switch (notification.type) {
+      case 'new_message':
+        // If we have chatRoomId, navigate to specific chat, otherwise just chat list
+        if (notification.bookingId || notification.data?.chatRoomId) {
+          // Logic to find chat room or just go to main chat page
+          navigate('/chat');
+        } else {
+          navigate('/chat');
+        }
+        break;
+
+      case 'booking_request':
+      case 'booking_status_update':
+      case 'booking_accepted':
+      case 'booking_completed':
+        // Navigate to profile bookings tab
+        if (user?.role === 'mechanic') {
+          navigate('/profile/mechanic?tab=bookings');
+        } else {
+          navigate('/profile/client?tab=bookings');
+        }
+        break;
+
+      case 'order_status_update':
+        // Distinguish between Store Orders and Booking Payments
+        // Booking payments have a bookingId in data or top level
+        if (notification.bookingId || notification.data?.bookingId || notification.message.includes('دفعة')) {
+          // It's a payment for a service -> Go to Mechanic Profile (Earnings/Financials)
+          navigate('/profile/mechanic');
+        } else {
+          // It's a store order -> Go to Store
+          navigate('/store');
+        }
+        break;
+
+      default:
+        // Do nothing specific, just stay on page
+        break;
+    }
   };
 
   return (
@@ -113,10 +164,10 @@ const Notifications = () => {
               notifications.map((notification, index) => (
                 <Card
                   key={notification.id}
-                  className={`p-8 transition-all duration-300 hover-lift hover:shadow-xl animate-slide-up shadow-lg border-border/50 bg-card/90 dark:bg-gray-900/90 ${
-                    !notification.read ? 'border-primary/50 bg-gradient-to-r from-primary/5 to-orange-500/5 dark:from-primary/10 dark:to-orange-500/10' : ''
-                  } transition-colors`}
+                  className={`p-8 transition-all duration-300 hover-lift hover:shadow-xl animate-slide-up shadow-lg border-border/50 bg-card/90 dark:bg-gray-900/90 ${!notification.read ? 'border-primary/50 bg-gradient-to-r from-primary/5 to-orange-500/5 dark:from-primary/10 dark:to-orange-500/10' : ''
+                    } transition-colors cursor-pointer`}
                   style={{ animationDelay: `${index * 0.1}s` }}
+                  onClick={() => handleNotificationClick(notification)}
                 >
                   <div className="flex items-start gap-4">
                     <div className="flex-shrink-0 mt-1">
@@ -148,7 +199,10 @@ const Notifications = () => {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => markAsRead(notification.id)}
+                          onClick={(e) => {
+                            e.stopPropagation(); // Prevent card click
+                            markAsRead(notification.id);
+                          }}
                           className="rounded-full px-6 py-2 hover-lift transition-all duration-300 hover:border-primary hover:bg-primary/5"
                         >
                           <Check className="h-5 w-5 ml-2" />

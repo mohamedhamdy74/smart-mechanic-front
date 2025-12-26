@@ -10,6 +10,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Calendar,
   Clock,
@@ -24,6 +26,9 @@ import {
   AlertTriangle,
   Edit,
   MessageCircle,
+  Package,
+  Upload,
+  Camera,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect, useMemo } from "react";
@@ -46,6 +51,11 @@ const MechanicProfile = () => {
   const [availabilityStatus, setAvailabilityStatus] = useState("available");
   const [showLocationDialog, setShowLocationDialog] = useState(false);
   const [mechanicLocation, setMechanicLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [completionCost, setCompletionCost] = useState<number>(0);
+  const [showAvatarDialog, setShowAvatarDialog] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   // Load user data using React Query
   const { data: userProfileData, isLoading: userLoadingQuery, error: userQueryError } = useQuery({
@@ -84,6 +94,7 @@ const MechanicProfile = () => {
         latitude: userProfile.latitude,
         longitude: userProfile.longitude,
         lastLocationUpdate: userProfile.lastLocationUpdate,
+        profileImage: userProfile.profileImage,
       };
     },
     enabled: !!user?._id,
@@ -185,6 +196,62 @@ const MechanicProfile = () => {
     }
   };
 
+  // Handle image selection
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("حجم الصورة يجب أن يكون أقل من 5 ميجابايت");
+        return;
+      }
+      if (!file.type.startsWith('image/')) {
+        toast.error("يرجى اختيار ملف صورة فقط");
+        return;
+      }
+      setSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Handle avatar upload
+  const handleAvatarUpload = async () => {
+    if (!selectedImage || !user?._id) {
+      toast.error("يرجى اختيار صورة أولاً");
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const { api } = await import('@/lib/api');
+      const formData = new FormData();
+      formData.append('avatar', selectedImage);
+
+      const response = await api.post(`/users/${user._id}/avatar`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+      if (response.data) {
+        toast.success("تم تحديث الصورة الشخصية بنجاح");
+        setShowAvatarDialog(false);
+        setSelectedImage(null);
+        setImagePreview(null);
+        // Refresh user data
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error("Error uploading avatar:", error);
+      toast.error("حدث خطأ في رفع الصورة");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   if (userLoading) {
     return (
       <div className="min-h-screen">
@@ -236,8 +303,21 @@ const MechanicProfile = () => {
           {/* Profile Header */}
           <div className="bg-gradient-to-br from-primary/10 via-orange-500/5 to-background rounded-3xl p-10 mb-10 animate-bounce-in shadow-2xl border border-border/50">
             <div className="flex flex-col md:flex-row items-center gap-6">
-              <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center border-4 border-white">
-                <User className="h-12 w-12 text-primary" />
+              <div className="relative">
+                <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center border-4 border-white overflow-hidden">
+                  {userData.profileImage ? (
+                    <img src={`http://localhost:5000/${userData.profileImage}`} alt={userData.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="h-12 w-12 text-primary" />
+                  )}
+                </div>
+                <button
+                  onClick={() => setShowAvatarDialog(true)}
+                  className="absolute bottom-0 right-0 bg-primary text-white rounded-full p-2 hover:bg-primary-hover transition-colors shadow-lg"
+                  title="تغيير الصورة الشخصية"
+                >
+                  <Camera className="h-4 w-4" />
+                </button>
               </div>
               <div className="text-center md:text-right flex-1">
                 <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-primary to-orange-500 bg-clip-text text-transparent">
@@ -575,199 +655,217 @@ const MechanicProfile = () => {
                                     إنهاء الخدمة
                                   </Button>
                                 </DialogTrigger>
-                                <DialogContent className="max-w-md">
-                                  <DialogHeader>
-                                    <DialogTitle className="text-right">
-                                      إنهاء الخدمة وإنشاء الفاتورة
-                                    </DialogTitle>
-                                  </DialogHeader>
-                                  <div className="space-y-4 text-right">
-                                    <div>
-                                      <h4 className="font-bold mb-2">
-                                        تفاصيل الخدمة
-                                      </h4>
-                                      <p className="text-sm text-muted-foreground">
-                                        {booking.serviceType}
-                                      </p>
-                                      <p className="text-sm text-muted-foreground">
-                                        العميل: {booking.customerId?.name}
-                                      </p>
+                                <DialogContent className="max-w-md p-0 overflow-hidden border-none shadow-2xl rounded-3xl">
+                                  <div className="bg-gradient-to-r from-primary/10 via-background to-primary/5 p-6 pb-4 border-b">
+                                    <DialogHeader>
+                                      <DialogTitle className="text-right text-xl font-bold flex items-center justify-end gap-2 text-primary">
+                                        إنهاء الخدمة وإنشاء الفاتورة
+                                        <div className="bg-primary/10 p-2 rounded-lg">
+                                          <Check className="h-5 w-5" />
+                                        </div>
+                                      </DialogTitle>
+                                    </DialogHeader>
+                                  </div>
+
+                                  <ScrollArea className="max-h-[60vh] px-6 py-4">
+                                    <div className="space-y-6 text-right">
+                                      <div className="bg-muted/50 p-4 rounded-2xl border border-dashed border-primary/20">
+                                        <h4 className="font-bold mb-3 text-sm flex items-center justify-end gap-2">
+                                          بيانات العميل والخدمة
+                                          <User className="h-4 w-4 text-muted-foreground" />
+                                        </h4>
+                                        <div className="grid grid-cols-2 gap-4 text-xs">
+                                          <div className="space-y-1">
+                                            <p className="text-muted-foreground">نوع الخدمة</p>
+                                            <p className="font-semibold">{booking.serviceType}</p>
+                                          </div>
+                                          <div className="space-y-1">
+                                            <p className="text-muted-foreground">اسم العميل</p>
+                                            <p className="font-semibold text-primary">{booking.customerId?.name}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div className="space-y-4">
+                                        <div className="relative">
+                                          <label className="block text-sm font-semibold mb-2 flex items-center justify-end gap-2">
+                                            وصف العمل المنجز
+                                            <Wrench className="h-4 w-4 text-primary" />
+                                          </label>
+                                          <textarea
+                                            className="w-full p-3 border rounded-xl text-right focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all bg-muted/30 resize-none"
+                                            rows={3}
+                                            placeholder="ما الذي قمت بإصلاحه؟"
+                                            id={`workDescription-${booking._id}`}
+                                          />
+                                        </div>
+
+                                        <div className="relative">
+                                          <label className="block text-sm font-semibold mb-2 flex items-center justify-end gap-2">
+                                            التكلفة الإجمالية (ج.م)
+                                            <TrendingUp className="h-4 w-4 text-primary" />
+                                          </label>
+                                          <div className="relative">
+                                            <input
+                                              type="number"
+                                              className="w-full p-3 border rounded-xl text-right focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all bg-muted/30 pr-10"
+                                              placeholder="0.00"
+                                              id={`totalCost-${booking._id}`}
+                                              onChange={(e) => setCompletionCost(parseFloat(e.target.value) || 0)}
+                                            />
+                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-medium text-xs">ج.م</span>
+                                          </div>
+                                        </div>
+
+                                        <div className="relative">
+                                          <label className="block text-sm font-semibold mb-2 flex items-center justify-end gap-2">
+                                            القطع المستخدمة (اختياري)
+                                            <Package className="h-4 w-4 text-primary" />
+                                          </label>
+                                          <textarea
+                                            className="w-full p-3 border rounded-xl text-right focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all bg-muted/30 resize-none"
+                                            rows={2}
+                                            placeholder="قطع الغيار المستبدلة..."
+                                            id={`parts-${booking._id}`}
+                                          />
+                                        </div>
+
+                                        <div className="bg-gradient-to-br from-primary/5 to-orange-500/5 p-4 rounded-2xl border border-primary/10 shadow-inner">
+                                          <h5 className="text-sm font-bold mb-3 border-b border-primary/10 pb-2 text-center">ملخص الحساب</h5>
+                                          <div className="space-y-3">
+                                            <div className="flex justify-between items-center text-sm">
+                                              <span className="font-semibold">{completionCost.toFixed(2)} ج.م</span>
+                                              <span className="text-muted-foreground">إجمالي المبلغ:</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-red-500 text-sm bg-red-500/5 px-3 py-1.5 rounded-lg border border-red-500/10">
+                                              <span className="font-bold">-( {(completionCost * 0.2).toFixed(2)} ) ج.م</span>
+                                              <span>عمولة الموقع (20%):</span>
+                                            </div>
+                                            <Separator className="bg-primary/10" />
+                                            <div className="flex justify-between items-center bg-green-500/10 px-4 py-3 rounded-xl border border-green-500/20">
+                                              <span className="font-bold text-green-700 text-xl">{(completionCost * 0.8).toFixed(2)} ج.م</span>
+                                              <span className="font-bold text-green-700">ربحك الصافي:</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
                                     </div>
+                                  </ScrollArea>
 
-                                    <div className="space-y-3">
-                                      <div>
-                                        <label className="block text-sm font-medium mb-1">
-                                          وصف العمل المنجز
-                                        </label>
-                                        <textarea
-                                          className="w-full p-2 border rounded-md text-right"
-                                          rows={3}
-                                          placeholder="وصف العمل الذي تم إنجازه..."
-                                          id={`workDescription-${booking._id}`}
-                                        />
-                                      </div>
+                                  <div className="p-6 pt-2 border-t bg-muted/20 flex gap-3 flex-row-reverse">
+                                    <Button
+                                      onClick={async () => {
+                                        const workDescription = (
+                                          document.getElementById(
+                                            `workDescription-${booking._id}`
+                                          ) as HTMLTextAreaElement
+                                        )?.value;
+                                        const totalCost = (
+                                          document.getElementById(
+                                            `totalCost-${booking._id}`
+                                          ) as HTMLInputElement
+                                        )?.value;
+                                        const parts = (
+                                          document.getElementById(
+                                            `parts-${booking._id}`
+                                          ) as HTMLTextAreaElement
+                                        )?.value;
 
-                                      <div>
-                                        <label className="block text-sm font-medium mb-1">
-                                          التكلفة الإجمالية (ج.م)
-                                        </label>
-                                        <input
-                                          type="number"
-                                          className="w-full p-2 border rounded-md text-right"
-                                          placeholder="0"
-                                          id={`totalCost-${booking._id}`}
-                                        />
-                                      </div>
-
-                                      <div>
-                                        <label className="block text-sm font-medium mb-1">
-                                          تكلفة العمالة (ج.م)
-                                        </label>
-                                        <input
-                                          type="number"
-                                          className="w-full p-2 border rounded-md text-right"
-                                          placeholder="0"
-                                          id={`laborCost-${booking._id}`}
-                                        />
-                                      </div>
-
-                                      <div>
-                                        <label className="block text-sm font-medium mb-1">
-                                          القطع المستخدمة (اختياري)
-                                        </label>
-                                        <textarea
-                                          className="w-full p-2 border rounded-md text-right"
-                                          rows={2}
-                                          placeholder="قائمة بالقطع المستخدمة..."
-                                          id={`parts-${booking._id}`}
-                                        />
-                                      </div>
-                                    </div>
-
-                                    <div className="flex gap-2 justify-end pt-4">
-                                      <Button
-                                        variant="outline"
-                                        onClick={() => {
-                                          // Close dialog logic
-                                          const dialog =
-                                            document.querySelector(
-                                              `[data-state="open"]`
-                                            );
-                                          if (dialog)
-                                            dialog.setAttribute(
-                                              "data-state",
-                                              "closed"
-                                            );
-                                        }}
-                                        className="rounded-full"
-                                      >
-                                        إلغاء
-                                      </Button>
-                                      <Button
-                                        onClick={async () => {
-                                          const workDescription = (
-                                            document.getElementById(
-                                              `workDescription-${booking._id}`
-                                            ) as HTMLTextAreaElement
-                                          )?.value;
-                                          const totalCost = (
-                                            document.getElementById(
-                                              `totalCost-${booking._id}`
-                                            ) as HTMLInputElement
-                                          )?.value;
-                                          const laborCost = (
-                                            document.getElementById(
-                                              `laborCost-${booking._id}`
-                                            ) as HTMLInputElement
-                                          )?.value;
-                                          const parts = (
-                                            document.getElementById(
-                                              `parts-${booking._id}`
-                                            ) as HTMLTextAreaElement
-                                          )?.value;
-
-                                          if (!workDescription || !totalCost) {
-                                            toast.error(
-                                              "يرجى إدخال وصف العمل والتكلفة الإجمالية"
-                                            );
-                                            return;
-                                          }
-
-                                          try {
-                                            const response = await fetch(
-                                              `http://localhost:5000/bookings/${booking._id}/complete`,
-                                              {
-                                                method: "POST",
-                                                headers: {
-                                                  Authorization: `Bearer ${localStorage.getItem(
-                                                    "accessToken"
-                                                  )}`,
-                                                  "Content-Type":
-                                                    "application/json",
-                                                },
-                                                body: JSON.stringify({
-                                                  workDescription,
-                                                  cost: parseFloat(totalCost),
-                                                  laborCost:
-                                                    parseFloat(laborCost) || 0,
-                                                  parts: parts
-                                                    ? parts
-                                                      .split(",")
-                                                      .map((p) => p.trim())
-                                                    : [],
-                                                }),
-                                              }
-                                            );
-
-                                            if (response.ok) {
-                                              const result =
-                                                await response.json();
-                                              // Update local state
-                                              const updatedBookings =
-                                                bookings.map((b: any) => {
-                                                  if (b._id === booking._id) {
-                                                    return {
-                                                      ...b,
-                                                      status: "completed",
-                                                      invoice: result.invoice,
-                                                    };
-                                                  }
-                                                  return b;
-                                                });
-                                              setBookings(updatedBookings);
-                                              toast.success(
-                                                "تم إنهاء الخدمة وإنشاء الفاتورة بنجاح"
-                                              );
-                                              // Close dialog
-                                              const dialog =
-                                                document.querySelector(
-                                                  `[data-state="open"]`
-                                                );
-                                              if (dialog)
-                                                dialog.setAttribute(
-                                                  "data-state",
-                                                  "closed"
-                                                );
-                                            } else {
-                                              toast.error(
-                                                "فشل في إنهاء الخدمة"
-                                              );
+                                        if (!workDescription || !totalCost) {
+                                          toast.error(
+                                            "يرجى إدخال وصف العمل والتكلفة الإجمالية"
+                                          );
+                                          return;
+                                        }
+                                        try {
+                                          const response = await fetch(
+                                            `http://localhost:5000/bookings/${booking._id}/complete`,
+                                            {
+                                              method: "POST",
+                                              headers: {
+                                                Authorization: `Bearer ${localStorage.getItem(
+                                                  "accessToken"
+                                                )}`,
+                                                "Content-Type":
+                                                  "application/json",
+                                              },
+                                              body: JSON.stringify({
+                                                workDescription,
+                                                cost: parseFloat(totalCost),
+                                                parts: parts
+                                                  ? parts
+                                                    .split(",")
+                                                    .map((p) => p.trim())
+                                                  : [],
+                                              }),
                                             }
-                                          } catch (error) {
-                                            console.error(
-                                              "Error completing service:",
-                                              error
+                                          );
+
+                                          if (response.ok) {
+                                            const result =
+                                              await response.json();
+                                            // Update local state
+                                            const updatedBookings =
+                                              bookings.map((b: any) => {
+                                                if (b._id === booking._id) {
+                                                  return {
+                                                    ...b,
+                                                    status: "completed",
+                                                    invoice: result.invoice,
+                                                  };
+                                                }
+                                                return b;
+                                              });
+                                            setBookings(updatedBookings);
+                                            toast.success(
+                                              "تم إنهاء الخدمة وإنشاء الفاتورة بنجاح"
                                             );
+                                            // Close dialog
+                                            const dialog =
+                                              document.querySelector(
+                                                `[data-state="open"]`
+                                              );
+                                            if (dialog)
+                                              dialog.setAttribute(
+                                                "data-state",
+                                                "closed"
+                                              );
+                                          } else {
                                             toast.error(
-                                              "حدث خطأ في إنهاء الخدمة"
+                                              "فشل في إنهاء الخدمة"
                                             );
                                           }
-                                        }}
-                                        className="rounded-full bg-green-600 hover:bg-green-700"
-                                      >
-                                        إنهاء الخدمة
-                                      </Button>
-                                    </div>
+                                        } catch (error) {
+                                          console.error(
+                                            "Error completing service:",
+                                            error
+                                          );
+                                          toast.error(
+                                            "حدث خطأ في إنهاء الخدمة"
+                                          );
+                                        }
+                                      }}
+                                      className="rounded-xl bg-green-600 hover:bg-green-700 flex-1 shadow-lg shadow-green-600/20 py-6 text-base font-bold"
+                                    >
+                                      تأكيد وإنهاء الخدمة
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      onClick={() => {
+                                        const dialog =
+                                          document.querySelector(
+                                            `[data-state="open"]`
+                                          );
+                                        if (dialog)
+                                          dialog.setAttribute(
+                                            "data-state",
+                                            "closed"
+                                          );
+                                      }}
+                                      className="rounded-xl px-6 py-6 border-2"
+                                    >
+                                      إلغاء
+                                    </Button>
                                   </div>
                                 </DialogContent>
                               </Dialog>
@@ -776,7 +874,7 @@ const MechanicProfile = () => {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="rounded-full"
+                                    className="rounded-full flex-1"
                                     onClick={() => setSelectedBooking(booking)}
                                   >
                                     <Eye className="h-4 w-4 ml-1" />
@@ -922,6 +1020,11 @@ const MechanicProfile = () => {
                                   </div>
                                 )}
                             </>
+                          ) : booking.status === "rejected" ? (
+                            <div className="flex items-center gap-2 text-red-600 font-semibold">
+                              <X className="h-4 w-4" />
+                              <span>تم رفض الطلب</span>
+                            </div>
                           ) : (
                             <>
                               <Button size="sm" className="rounded-full flex-1">
@@ -1080,7 +1183,7 @@ const MechanicProfile = () => {
                         </div>
                         <div className="text-left">
                           <p className="font-bold text-primary">
-                            {booking.actualCost || booking.estimatedCost || 0}{" "}
+                            {(booking.actualCost || booking.estimatedCost || 0).toFixed(2)}{" "}
                             ج.م
                           </p>
                           <span className="text-xs bg-green-500/10 text-green-600 px-2 py-1 rounded-full">
@@ -1099,87 +1202,12 @@ const MechanicProfile = () => {
                 </div>
               </Card>
 
-              {/* Customer Reviews */}
+              {/* All Reviews Section */}
               <Card
                 className="p-6 animate-slide-up"
                 style={{ animationDelay: "0.5s" }}
               >
-                <h2 className="text-2xl font-bold mb-6 text-right">
-                  تقييمات العملاء
-                </h2>
-                <div className="space-y-4">
-                  {bookings
-                    .filter(
-                      (b) =>
-                        b.status === "completed" &&
-                        b.reviews &&
-                        b.reviews.length > 0
-                    )
-                    .map((booking: any) => (
-                      <div
-                        key={booking._id}
-                        className="p-4 rounded-xl border border-border bg-muted/20"
-                      >
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="text-right flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="font-semibold">
-                                {booking.customerId?.name || "عميل"}
-                              </span>
-                              <div className="flex items-center gap-1">
-                                {Array.from({
-                                  length: booking.reviews[0].rating,
-                                }).map((_, i) => (
-                                  <Star
-                                    key={i}
-                                    className="h-4 w-4 fill-yellow-500 text-yellow-500"
-                                  />
-                                ))}
-                                <span className="text-sm font-medium">
-                                  {booking.reviews[0].rating}/5
-                                </span>
-                              </div>
-                            </div>
-                            <p className="text-sm text-muted-foreground mb-2">
-                              {booking.serviceType}
-                            </p>
-                            {booking.reviews[0].comment && (
-                              <p className="text-sm italic">
-                                "{booking.reviews[0].comment}"
-                              </p>
-                            )}
-                            <p className="text-xs text-muted-foreground mt-2">
-                              {new Date(
-                                booking.reviews[0].createdAt
-                              ).toLocaleDateString("ar-EG")}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  {bookings.filter(
-                    (b) =>
-                      b.status === "completed" &&
-                      b.reviews &&
-                      b.reviews.length > 0
-                  ).length === 0 && (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <Star className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                        <p>لا توجد تقييمات بعد</p>
-                        <p className="text-sm">
-                          ستظهر هنا تقييمات العملاء بعد إنهاء الخدمات
-                        </p>
-                      </div>
-                    )}
-                </div>
-              </Card>
-
-              {/* All Reviews Section */}
-              <Card
-                className="p-6 animate-slide-up"
-                style={{ animationDelay: "0.6s" }}
-              >
-                <h2 className="text-2xl font-bold mb-6 text-right">
+                <h2 className="text-2xl font-bold mb-6 text-right font-arabic">
                   جميع التقييمات والمراجعات
                 </h2>
                 <div className="space-y-4">
@@ -1188,50 +1216,51 @@ const MechanicProfile = () => {
                     .map((booking: any) => (
                       <div
                         key={`review-${booking._id}`}
-                        className="p-4 rounded-xl border border-border bg-gradient-to-r from-blue-50/50 to-indigo-50/50"
+                        className="p-4 rounded-xl border border-border bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-gray-800/50 dark:to-gray-900/50"
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="text-right flex-1">
                             <div className="flex items-center gap-2 mb-2">
-                              <span className="font-semibold">
+                              <span className="font-semibold text-lg">
                                 {booking.customerId?.name || "عميل"}
                               </span>
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1 bg-yellow-400/10 px-2 py-0.5 rounded-full border border-yellow-400/20">
                                 {Array.from({
                                   length: booking.reviews[0].rating,
                                 }).map((_, i) => (
                                   <Star
                                     key={i}
-                                    className="h-4 w-4 fill-yellow-500 text-yellow-500"
+                                    className="h-3.5 w-3.5 fill-yellow-500 text-yellow-500"
                                   />
                                 ))}
-                                <span className="text-sm font-medium">
-                                  {booking.reviews[0].rating}/5
+                                <span className="text-sm font-bold text-yellow-600 mr-1">
+                                  {booking.reviews[0].rating}
                                 </span>
                               </div>
                             </div>
-                            <p className="text-sm text-muted-foreground mb-2">
-                              الخدمة: {booking.serviceType}
+                            <p className="text-sm text-muted-foreground mb-3 flex items-center justify-end gap-1">
+                              <span className="font-medium text-primary">{booking.serviceType}</span>
+                              <span className="mx-1 opacity-30">•</span>
+                              <span>{new Date(booking.reviews[0].createdAt).toLocaleDateString("ar-EG")}</span>
                             </p>
+
                             {booking.reviews[0].comment && (
-                              <div className="bg-white/70 p-3 rounded-lg border">
-                                <p className="text-sm italic text-gray-700">
+                              <div className="bg-white/80 dark:bg-gray-800/80 p-4 rounded-2xl border border-border/50 shadow-sm relative mr-2">
+                                <div className="absolute top-1/2 -right-2 -translate-y-1/2 w-4 h-4 bg-white/80 dark:bg-gray-800/80 border-t border-r border-border/50 rotate-45 hidden md:block" />
+                                <p className="text-base italic text-foreground leading-relaxed">
                                   "{booking.reviews[0].comment}"
                                 </p>
                               </div>
                             )}
-                            <div className="flex items-center justify-between mt-3">
-                              <p className="text-xs text-muted-foreground">
-                                {new Date(
-                                  booking.reviews[0].createdAt
-                                ).toLocaleDateString("ar-EG")}
-                              </p>
+
+                            <div className="flex items-center justify-end mt-4">
                               <Badge
                                 variant={
                                   booking.status === "completed"
                                     ? "default"
                                     : "secondary"
                                 }
+                                className="rounded-full px-4"
                               >
                                 {booking.status === "completed"
                                   ? "خدمة مكتملة"
@@ -1244,12 +1273,12 @@ const MechanicProfile = () => {
                     ))}
                   {bookings.filter((b) => b.reviews && b.reviews.length > 0)
                     .length === 0 && (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <Star className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                        <p>لا توجد تقييمات أو مراجعات</p>
-                        <p className="text-sm">
-                          ستظهر هنا جميع التقييمات والمراجعات من العملاء
-                        </p>
+                      <div className="text-center py-12 text-muted-foreground">
+                        <div className="bg-muted/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <Star className="h-8 w-8 opacity-20" />
+                        </div>
+                        <p className="text-lg font-medium">لا توجد تقييمات أو مراجعات بعد</p>
+                        <p className="text-sm opacity-70">ستظهر هنا جميع آراء العملاء حول خدماتك</p>
                       </div>
                     )}
                 </div>
@@ -1298,8 +1327,8 @@ const MechanicProfile = () => {
                 <div className="space-y-4">
                   <Button
                     className={`w-full rounded-full py-6 text-lg font-semibold hover-lift transition-all duration-300 shadow-lg ${availabilityStatus === "available"
-                        ? "bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
-                        : "bg-gray-300 hover:bg-gray-400 text-gray-700"
+                      ? "bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
+                      : "bg-gray-300 hover:bg-gray-400 text-gray-700"
                       }`}
                     onClick={async () => {
                       try {
@@ -1336,8 +1365,8 @@ const MechanicProfile = () => {
                   <Button
                     variant="outline"
                     className={`w-full rounded-full py-6 text-lg font-semibold hover-lift transition-all duration-300 ${availabilityStatus === "unavailable"
-                        ? "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white border-red-500"
-                        : "hover:bg-red-50 hover:border-red-300 hover:text-red-600"
+                      ? "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white border-red-500"
+                      : "hover:bg-red-50 hover:border-red-300 hover:text-red-600"
                       }`}
                     onClick={async () => {
                       try {
@@ -1384,7 +1413,7 @@ const MechanicProfile = () => {
                 </h3>
                 <div className="text-center mb-6">
                   <div className="text-5xl font-bold mb-3 text-primary">
-                    {userData?.totalEarnings || 0} ج.م
+                    {Number(userData?.totalEarnings || 0).toFixed(2)} ج.م
                   </div>
                   <p className="text-base text-muted-foreground font-medium">
                     إجمالي الأرباح
@@ -1432,8 +1461,8 @@ const MechanicProfile = () => {
               </Card>
             </div>
           </div>
-        </div>
-      </main>
+        </div >
+      </main >
       <Footer />
 
       {/* Location Selection Dialog */}
@@ -1567,7 +1596,80 @@ const MechanicProfile = () => {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+
+      {/* Avatar Upload Dialog */}
+      <Dialog open={showAvatarDialog} onOpenChange={setShowAvatarDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-right">تحديث الصورة الشخصية</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex flex-col items-center gap-4">
+              {imagePreview ? (
+                <div className="relative w-48 h-48 rounded-full overflow-hidden border-4 border-primary/20">
+                  <img src={imagePreview} alt="معاينة" className="w-full h-full object-cover" />
+                </div>
+              ) : userData.profileImage ? (
+                <div className="relative w-48 h-48 rounded-full overflow-hidden border-4 border-primary/20">
+                  <img src={`http://localhost:5000/${userData.profileImage}`} alt={userData.name} className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className="w-48 h-48 rounded-full bg-primary/20 flex items-center justify-center border-4 border-primary/20">
+                  <User className="h-24 w-24 text-primary" />
+                </div>
+              )}
+
+              <div className="w-full space-y-3">
+                <input
+                  type="file"
+                  id="avatar-upload-profile"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
+                <label htmlFor="avatar-upload-profile" className="w-full">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full flex items-center justify-center gap-2"
+                    onClick={() => document.getElementById('avatar-upload-profile')?.click()}
+                  >
+                    <Upload className="h-4 w-4" />
+                    {selectedImage ? "تغيير الصورة" : "اختر صورة جديدة"}
+                  </Button>
+                </label>
+
+                {selectedImage && (
+                  <p className="text-xs text-green-600 text-right">
+                    تم اختيار: {selectedImage.name}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowAvatarDialog(false);
+                  setSelectedImage(null);
+                  setImagePreview(null);
+                }}
+              >
+                إلغاء
+              </Button>
+              <Button
+                onClick={handleAvatarUpload}
+                disabled={!selectedImage || uploadingAvatar}
+                className="bg-primary hover:bg-primary-hover"
+              >
+                {uploadingAvatar ? "جاري الرفع..." : "حفظ الصورة"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div >
   );
 };
 

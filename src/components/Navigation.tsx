@@ -118,20 +118,17 @@ export const Navigation = () => {
         return [
           ...baseLinks,
           { href: "/mechanics", label: "الميكانيكيين" },
-          { href: "/mechanic-tracker", label: "تتبع الميكانيكي" },
           { href: "/ai-diagnosis", label: "التشخيص الذكي" },
         ];
       case 'mechanic':
         return [
-          ...baseLinks,
-          // No services page for mechanics
+          // Mechanics only have profile - no home page link
         ];
       case 'workshop':
         return [
-          ...baseLinks,
           { href: "/order-management", label: "إدارة الطلبات" },
           { href: "/reports", label: "التقارير" },
-          { href: "/ai-diagnosis", label: "التشخيص الذكي" },
+          // Workshop doesn't need home, services, store, or AI diagnosis links
         ];
       case 'admin':
         return baseLinks; // Admin only sees basic links
@@ -210,9 +207,8 @@ export const Navigation = () => {
               <Link
                 key={link.href}
                 to={link.href}
-                className={`text-sm font-medium transition-colors hover:text-primary relative ${
-                  isActive(link.href) ? "text-primary" : "text-foreground"
-                }`}
+                className={`text-sm font-medium transition-colors hover:text-primary relative ${isActive(link.href) ? "text-primary" : "text-foreground"
+                  }`}
               >
                 {link.label}
                 {isActive(link.href) && (
@@ -240,9 +236,8 @@ export const Navigation = () => {
                 key={link.href}
                 to={link.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`block py-2 text-sm font-medium transition-colors ${
-                  isActive(link.href) ? "text-primary" : "text-foreground"
-                }`}
+                className={`block py-2 text-sm font-medium transition-colors ${isActive(link.href) ? "text-primary" : "text-foreground"
+                  }`}
               >
                 {link.label}
               </Link>

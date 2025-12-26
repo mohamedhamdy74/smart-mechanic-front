@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Star, Phone, Mail, MapPin, Wrench, LogIn, AlertTriangle, MessageCircle } from "lucide-react";
+import { Search, Star, Phone, Mail, MapPin, Wrench, LogIn, AlertTriangle, MessageCircle, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/SimpleAuthContext";
@@ -269,12 +269,21 @@ const Mechanics = () => {
                   className="group bg-card/90 dark:bg-gray-900/90 rounded-2xl p-6 border border-border/50 dark:border-gray-700/50 hover:border-primary transition-all hover-lift hover-glow animate-slide-up transition-colors duration-300"
                   style={{ animationDelay: `${index * 0.03}s` }}
                 >
-                  <div className="bg-muted/50 rounded-xl h-32 mb-4 overflow-hidden">
-                    <img
-                      src={mechanic.image}
-                      alt={mechanic.name}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                    />
+                  <div
+                    className="bg-muted/50 rounded-xl h-32 mb-4 overflow-hidden cursor-pointer"
+                    onClick={() => navigate(`/mechanic-public/${mechanic.id}`)}
+                  >
+                    {mechanic.image ? (
+                      <img
+                        src={mechanic.image}
+                        alt={mechanic.name}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-primary/10">
+                        <User className="h-12 w-12 text-primary" />
+                      </div>
+                    )}
                   </div>
 
                   <div className="text-right mb-4">
